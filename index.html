@@ -1,0 +1,1701 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="description" content="Tap the die, get a short momentum task, take action.">
+<meta name="theme-color" content="#12234A">
+<link rel="icon" href="data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2024%2024%22%3E%3Crect%20x%3D%22.75%22%20y%3D%22.75%22%20width%3D%2222.5%22%20height%3D%2222.5%22%20rx%3D%226%22%20fill%3D%22%23FFC83D%22%2F%3E%3Cg%20fill%3D%22%23111%22%3E%3Ccircle%20cx%3D%226.5%22%20cy%3D%226.5%22%20r%3D%222.4%22%2F%3E%3Ccircle%20cx%3D%2217.5%22%20cy%3D%226.5%22%20r%3D%222.4%22%2F%3E%3Ccircle%20cx%3D%2212%22%20cy%3D%2212%22%20r%3D%222.4%22%2F%3E%3Ccircle%20cx%3D%226.5%22%20cy%3D%2217.5%22%20r%3D%222.4%22%2F%3E%3Ccircle%20cx%3D%2217.5%22%20cy%3D%2217.5%22%20r%3D%222.4%22%2F%3E%3C%2Fg%3E%3C%2Fsvg%3E">
+<style>
+/* Base reset (the artifact host normally supplies this). */
+:root { padding-top: env(safe-area-inset-top, 0px); padding-bottom: env(safe-area-inset-bottom, 0px); }
+body { margin: 0; }
+[hidden] { display: none !important; }
+</style>
+<title>Momentum Dice</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500..800&family=Figtree:wght@400..700&family=Martian+Mono:wght@400..600&display=swap">
+<style>
+/* Layout: one-screen tabletop. A dice coaster fills the screen in WebGL; a single card is dealt up from the bottom edge and swaps between the six-face legend, the rolled move, its timer, and the finish. */
+/* Skins: the bare :root block is the default skin ("midnight"). A future skin is one
+   :root[data-skin="name"] block redefining these same tokens, plus an entry in SKINS in the script.
+   The 3D scene reads its colors from these tokens too, so nothing else needs to change. */
+:root {
+  --bg: #12234A;          /* navy room */
+  --bg-glow: #1F3D74;
+  --ink: #F3F6FC;
+  --ink-soft: #A9B9D6;
+  --felt: #A9D3F5;        /* light blue coaster */
+  --rim: #7FB3E6;
+  --die: #FFC83D;         /* yellow die */
+  --die-deep: #C99412;
+  --pip: #111111;         /* black pips */
+  --on-accent: #111111;
+  --focus: #A9D3F5;
+  --good: #5ED8A6;
+  --good-fill: #34C08C;
+  --on-good: #0B1A33;
+  --card: #1A2E58;
+  --card-2: #243D70;
+  --line: #2C477C;
+  --line-deep: #38568F;
+  --hover: rgb(243 246 252 / .08);
+  --scrim: rgb(4 10 26 / .6);
+  --shadow-rgb: 2 8 24;
+  --shadow-a: .5;
+  --env-top: #F4F7FF;     /* reflections on the die */
+  --env-bottom: #12234A;
+  color-scheme: dark;
+
+  --font-display: "Bricolage Grotesque", "Avenir Next", "Segoe UI", system-ui, sans-serif;
+  --font-body: "Figtree", "Avenir Next", "Segoe UI", system-ui, sans-serif;
+  --font-mono: "Martian Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+
+  --r-sheet: 28px;
+  --r-btn: 16px;
+  --gutter-l: max(16px, env(safe-area-inset-left, 0px));
+  --gutter-r: max(16px, env(safe-area-inset-right, 0px));
+}
+
+html, body { height: 100%; }
+html { touch-action: manipulation; -webkit-text-size-adjust: 100%; }
+body {
+  overflow: hidden;
+  overscroll-behavior: none;
+  background: radial-gradient(130% 80% at 50% 34%, var(--bg-glow) 0%, var(--bg) 60%), var(--bg);
+  background-color: var(--bg);
+  color: var(--ink);
+  font: 400 16px/1.5 var(--font-body);
+  -webkit-tap-highlight-color: transparent;
+}
+button { font: inherit; color: inherit; }
+:focus-visible { outline: 3px solid var(--focus); outline-offset: 3px; }
+.sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
+.ico { width: 22px; height: 22px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; flex: none; }
+.face { display: block; flex: none; }
+.face rect { fill: var(--die); }
+.face circle { fill: var(--pip); }
+
+/* ---------- stage ---------- */
+#scene { position: fixed; inset: 0; width: 100%; height: 100%; display: block; z-index: 0; opacity: 0; transition: opacity .5s ease; }
+#scene.ready { opacity: 1; }
+.die-hit {
+  position: fixed; left: 0; top: 0; z-index: 2;
+  width: 140px; height: 140px; padding: 0; border: 0; border-radius: 50%;
+  background: transparent; cursor: pointer;
+  -webkit-touch-callout: none; user-select: none; -webkit-user-select: none; touch-action: manipulation;
+}
+.die-hit:focus-visible { outline-offset: -6px; }
+body[data-mode="rolling"] .die-hit { cursor: default; }
+.die-hit.hint::after {
+  content: ""; position: absolute; inset: 16%; border-radius: 50%;
+  border: 2px solid var(--pip); opacity: 0; pointer-events: none;
+  animation: hint 2.8s ease-out 1.4s infinite;
+}
+body:not([data-mode="idle"]) .die-hit.hint::after { animation: none; }
+@keyframes hint { 0% { opacity: .55; transform: scale(.92); } 70%, 100% { opacity: 0; transform: scale(1.38); } }
+
+/* Fallback die when WebGL is unavailable */
+.fb-tray { position: fixed; left: 0; top: 0; z-index: 1; border-radius: 50%; pointer-events: none;
+  background: radial-gradient(closest-side, var(--felt) 88%, var(--rim) 89%, var(--rim) 100%);
+  box-shadow: 0 16px 36px rgb(var(--shadow-rgb) / .28); }
+.fb-die { display: block; width: 100%; height: 100%; transition: transform .15s ease;
+  filter: drop-shadow(0 10px 10px rgb(var(--shadow-rgb) / .4)); }
+.fb-die .face { width: 100%; height: 100%; }
+.fb-die.pressed { transform: translateY(-7%) scale(1.04); }
+.fb-die.fb-roll { animation: fbRoll 1s cubic-bezier(.3,.6,.4,1); }
+.fb-die.fb-wig { animation: fbWig .45s ease-out; }
+@keyframes fbRoll {
+  0% { transform: none; } 30% { transform: translateY(-55%) rotate(250deg) scale(1.1); }
+  62% { transform: translateY(0) rotate(460deg); } 75% { transform: translateY(-12%) rotate(520deg); }
+  88% { transform: translateY(0) rotate(540deg); } 94% { transform: translateY(-3%) rotate(540deg); } 100% { transform: rotate(540deg); }
+}
+@keyframes fbWig { 20% { transform: rotate(-9deg); } 45% { transform: rotate(7deg); } 70% { transform: rotate(-3deg); } 100% { transform: none; } }
+
+/* ---------- top bar ---------- */
+.topbar {
+  position: fixed; inset: 0 0 auto; z-index: 5;
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  padding-top: calc(env(safe-area-inset-top, 0px) + 8px); padding-bottom: 4px;
+  padding-left: var(--gutter-l); padding-right: var(--gutter-r);
+  pointer-events: none;
+}
+.topbar > * { pointer-events: auto; }
+.brand { display: flex; align-items: center; gap: 10px; margin: 0; font: 700 19px/1 var(--font-display); letter-spacing: -.015em; font-variation-settings: "opsz" 36; }
+.brand .face { width: 22px; height: 22px; transform: rotate(-9deg); }
+.tools { display: flex; gap: 4px; margin-right: -6px; }
+.icon-btn {
+  width: 44px; height: 44px; border: 0; border-radius: 50%; padding: 0;
+  display: grid; place-items: center; background: transparent; color: var(--ink); cursor: pointer;
+  transition: transform .1s ease, background-color .2s ease;
+}
+.icon-btn:hover { background: var(--hover); }
+.icon-btn:active { transform: scale(.9); }
+
+/* ---------- the card sheet ---------- */
+.sheet {
+  position: fixed; left: 0; right: 0; bottom: 0; z-index: 6;
+  max-width: 560px; margin-inline: auto;
+  max-height: min(76%, calc(100% - 128px));
+  overflow-y: auto; overscroll-behavior: contain;
+  background: var(--card); color: var(--ink);
+  border-radius: var(--r-sheet) var(--r-sheet) 0 0;
+  box-shadow: 0 56px 0 0 var(--card), 0 -10px 40px rgb(var(--shadow-rgb) / .16), 0 -1px 0 var(--line);
+  padding-top: 22px; padding-bottom: calc(20px + env(safe-area-inset-bottom, 0px));
+  padding-left: var(--gutter-l); padding-right: var(--gutter-r);
+  transform: translateY(calc(100% + 72px));
+  transition: transform .24s cubic-bezier(.5,0,.75,0);
+}
+.sheet.open { transform: none; transition: transform .52s cubic-bezier(.2,1.22,.36,1); }
+.sheet.instant { transition: none !important; }
+.view { padding-inline: 4px; animation: viewIn .26s ease-out both; }
+@keyframes viewIn { from { opacity: .35; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+
+.label, .eyebrow {
+  margin: 0; font: 500 11px/1.25 var(--font-mono); letter-spacing: .08em; text-transform: uppercase; color: var(--ink-soft);
+}
+.eyebrow { display: inline-flex; align-items: center; gap: 8px; }
+.eyebrow .face { width: 20px; height: 20px; }
+
+/* idle */
+.idle-head { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 6px 16px; }
+.prompt { margin: 0; font: 750 23px/1.1 var(--font-display); letter-spacing: -.02em; font-variation-settings: "opsz" 48; }
+.today { margin: 0; font: 400 12px/1.4 var(--font-mono); color: var(--ink-soft); font-variant-numeric: tabular-nums; }
+.legend { list-style: none; margin: 16px 0 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 12px 14px; }
+.legend li { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.legend .face { width: 28px; height: 28px; }
+.lg-text { display: grid; min-width: 0; }
+.lg-name { font-weight: 600; font-size: 14px; line-height: 1.2; }
+.lg-time { font: 400 11px/1.4 var(--font-mono); color: var(--ink-soft); }
+
+/* task */
+.task-top { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.chip { flex: none; font: 500 12px/1 var(--font-mono); padding: 7px 10px; border-radius: 999px; background: var(--card-2); color: var(--ink); white-space: nowrap; font-variant-numeric: tabular-nums; }
+.task-title { margin: 12px 0 0; font: 800 clamp(28px, 7.6vw, 34px)/1.02 var(--font-display); letter-spacing: -.028em; font-variation-settings: "opsz" 72; text-wrap: balance; }
+.task-body { display: grid; gap: 14px; margin-top: 16px; }
+.task-body p { margin: 4px 0 0; max-width: 62ch; }
+.do-text { font-size: 17px; font-weight: 500; line-height: 1.45; }
+.why-text { font-size: 15px; color: var(--ink-soft); }
+.actions { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 20px; }
+.actions.one { grid-template-columns: 1fr; }
+
+.btn {
+  appearance: none; border: 0; min-height: 54px; padding: 0 14px; border-radius: var(--r-btn);
+  display: inline-flex; align-items: center; justify-content: center; gap: 8px; min-width: 0;
+  font: 700 16px/1.1 var(--font-display); letter-spacing: -.005em; cursor: pointer;
+  user-select: none; -webkit-user-select: none;
+  transition: transform .08s ease, box-shadow .08s ease, background-color .2s ease;
+}
+.btn .ico { width: 20px; height: 20px; }
+.btn-primary { background: var(--die); color: var(--on-accent); box-shadow: 0 4px 0 var(--die-deep), 0 10px 20px rgb(var(--shadow-rgb) / .14); }
+.btn-primary:active { transform: translateY(3px); box-shadow: 0 1px 0 var(--die-deep), 0 3px 8px rgb(var(--shadow-rgb) / .12); }
+.btn-secondary { background: var(--card-2); color: var(--ink); box-shadow: 0 4px 0 var(--line-deep); }
+.btn-secondary:active { transform: translateY(3px); box-shadow: 0 1px 0 var(--line-deep); }
+.btn-ghost { background: transparent; color: var(--ink); box-shadow: inset 0 0 0 2px var(--line-deep); }
+.btn-ghost:active { transform: scale(.97); }
+.btn-meta { font: 500 12px/1 var(--font-mono); opacity: .8; font-variant-numeric: tabular-nums; }
+
+.link-btn {
+  appearance: none; border: 0; background: none; cursor: pointer; color: var(--ink);
+  display: inline-flex; align-items: center; gap: 6px; padding: 10px 8px; margin: -10px -8px;
+  font: 600 14px/1 var(--font-body); border-radius: 10px;
+}
+.link-btn:hover { background: var(--hover); }
+.link-btn .ico { width: 18px; height: 18px; }
+
+/* timer */
+.timer-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-width: 0; }
+.timer-head .eyebrow { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; display: block; }
+.ring-wrap { position: relative; width: clamp(148px, 30vh, 210px); max-width: 100%; aspect-ratio: 1; margin: 16px auto 0; }
+.ring { width: 100%; height: 100%; transform: rotate(-90deg); display: block; }
+.ring-track { fill: none; stroke: var(--card-2); stroke-width: 14; transition: stroke .3s ease; }
+.ring-fill { fill: none; stroke: var(--die); stroke-width: 14; stroke-linecap: round; transition: stroke-dashoffset .3s linear; }
+.ring-center { position: absolute; inset: 0; display: grid; place-content: center; justify-items: center; gap: 8px; }
+.clock { font: 500 clamp(32px, 9vw, 44px)/1 var(--font-mono); letter-spacing: -.05em; font-variant-numeric: tabular-nums; }
+.clock-state { font: 500 11px/1 var(--font-mono); letter-spacing: .1em; text-transform: uppercase; color: var(--ink-soft); }
+#vTimer[data-st="fin"] .ring-track { stroke: var(--focus); animation: ringPulse 1.4s ease-in-out infinite; }
+#vTimer[data-st="pause"] .ring-fill { stroke: var(--ink-soft); }
+@keyframes ringPulse { 50% { opacity: .45; } }
+.stepper { display: flex; align-items: center; justify-content: center; gap: 16px; margin-top: 14px; }
+.step-btn {
+  width: 48px; height: 48px; border: 0; border-radius: 50%; padding: 0; cursor: pointer;
+  display: grid; place-items: center; background: var(--card-2); color: var(--ink);
+  box-shadow: 0 3px 0 var(--line-deep); transition: transform .08s ease, box-shadow .08s ease;
+  user-select: none; -webkit-user-select: none; touch-action: manipulation;
+}
+.step-btn:active { transform: translateY(2px); box-shadow: 0 1px 0 var(--line-deep); }
+.step-btn:disabled { opacity: .4; cursor: default; }
+.step-val { min-width: 96px; text-align: center; font: 750 21px/1 var(--font-display); font-variant-numeric: tabular-nums; }
+.hint-line { margin: 10px 0 0; text-align: center; font: 400 12px/1.4 var(--font-mono); color: var(--ink-soft); }
+.early { display: flex; justify-content: center; margin-top: 16px; }
+
+/* done */
+.done-hero { display: flex; align-items: center; gap: 16px; margin-top: 14px; }
+.check-badge { width: 64px; height: 64px; flex: none; border-radius: 50%; display: grid; place-items: center; background: var(--good-fill); }
+.check-badge svg { width: 34px; height: 34px; fill: none; stroke: var(--on-good); stroke-width: 3.2; stroke-linecap: round; stroke-linejoin: round; }
+.check-badge.play { animation: pop .55s cubic-bezier(.2,1.7,.4,1) both; }
+.check-badge.play path { stroke-dasharray: 24; stroke-dashoffset: 24; animation: draw .38s .16s ease-out forwards; }
+@keyframes pop { from { transform: scale(.4) rotate(-20deg); } to { transform: none; } }
+@keyframes draw { to { stroke-dashoffset: 0; } }
+.done-title { margin: 0; font: 800 32px/1 var(--font-display); letter-spacing: -.03em; font-variation-settings: "opsz" 72; }
+.done-sub { margin: 6px 0 0; font-size: 15px; color: var(--ink-soft); }
+.done-stats { margin: 16px 0 0; padding: 12px 14px; border-radius: 14px; background: var(--card-2); font: 400 12px/1.4 var(--font-mono); font-variant-numeric: tabular-nums; }
+
+/* ---------- history ---------- */
+.scrim { position: fixed; inset: 0; z-index: 8; background: var(--scrim); opacity: 0; pointer-events: none; transition: opacity .25s ease; }
+.scrim.show { opacity: 1; pointer-events: auto; }
+.history {
+  position: fixed; left: 0; right: 0; bottom: 0; z-index: 9;
+  max-width: 560px; margin-inline: auto;
+  height: calc(100% - 44px - env(safe-area-inset-top, 0px));
+  display: flex; flex-direction: column;
+  background: var(--card); color: var(--ink);
+  border-radius: var(--r-sheet) var(--r-sheet) 0 0;
+  box-shadow: 0 -10px 40px rgb(var(--shadow-rgb) / .22);
+  transform: translateY(104%); transition: transform .32s cubic-bezier(.3,.8,.3,1);
+}
+.history.open { transform: none; }
+.hist-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 18px var(--gutter-r) 8px var(--gutter-l); }
+.hist-head h2 { margin: 0 0 0 4px; font: 800 26px/1 var(--font-display); letter-spacing: -.025em; font-variation-settings: "opsz" 60; }
+.hist-body { flex: 1; overflow-y: auto; overscroll-behavior: contain; padding: 8px var(--gutter-r) calc(28px + env(safe-area-inset-bottom, 0px)) var(--gutter-l); }
+.hist-body > * { margin-inline: 4px; }
+.stats { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+.stat { background: var(--card-2); border-radius: 16px; padding: 12px; min-width: 0; display: grid; gap: 6px; }
+.stat b { font: 800 28px/1 var(--font-display); letter-spacing: -.02em; font-variant-numeric: tabular-nums; }
+.stat small { font: 400 11px/1.3 var(--font-body); color: var(--ink-soft); }
+.bytask { margin-top: 22px; display: grid; gap: 10px; }
+.bt-row { display: grid; grid-template-columns: 22px minmax(0, 1fr) auto; grid-template-rows: auto 6px; column-gap: 10px; row-gap: 5px; align-items: center; }
+.bt-row .face { width: 22px; height: 22px; grid-row: span 2; }
+.bt-name { font-size: 14px; font-weight: 600; line-height: 1.2; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.bt-num { font: 400 12px/1 var(--font-mono); color: var(--ink-soft); font-variant-numeric: tabular-nums; }
+.bt-bar { grid-column: 2 / 4; position: relative; height: 6px; border-radius: 3px; background: var(--card-2); overflow: hidden; }
+.bt-bar i { position: absolute; inset: 0 auto 0 0; border-radius: 3px; }
+.bt-rolled { background: var(--line-deep); }
+.bt-done { background: var(--die); }
+.day { margin-top: 24px; }
+.day h3 { position: sticky; top: -8px; z-index: 1; padding: 8px 0 6px; background: var(--card); }
+.row { display: grid; grid-template-columns: 70px 22px minmax(0, 1fr) auto; align-items: center; gap: 10px; padding: 11px 0; border-bottom: 1px solid var(--line); }
+.row:last-child { border-bottom: 0; }
+.row time { font: 400 12px/1 var(--font-mono); color: var(--ink-soft); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.row .face { width: 22px; height: 22px; }
+.row-title { font-size: 15px; font-weight: 600; line-height: 1.25; min-width: 0; }
+.status { display: inline-flex; align-items: center; gap: 6px; font: 500 11px/1.2 var(--font-mono); white-space: nowrap; font-variant-numeric: tabular-nums; }
+.status::before { content: ""; width: 8px; height: 8px; border-radius: 50%; flex: none; }
+.status.done { color: var(--good); }
+.status.done::before { background: var(--good-fill); }
+.status.now { color: var(--ink); }
+.status.now::before { background: var(--die); }
+.status.open { color: var(--ink-soft); }
+.status.open::before { box-shadow: inset 0 0 0 1.5px var(--ink-soft); }
+.empty { padding: 32px 4px 8px; }
+.empty-title { margin: 0; font: 750 21px/1.2 var(--font-display); }
+.empty p { margin: 8px 0 0; color: var(--ink-soft); max-width: 44ch; }
+.hist-foot { margin-top: 28px; display: grid; gap: 12px; justify-items: start; }
+.note { margin: 0; font: 400 11px/1.5 var(--font-mono); color: var(--ink-soft); }
+.btn-ghost.armed { box-shadow: inset 0 0 0 2px var(--die); color: var(--ink); }
+
+/* ---------- toast + confetti ---------- */
+.toast {
+  position: fixed; left: 50%; top: calc(env(safe-area-inset-top, 0px) + 62px); z-index: 10;
+  max-width: calc(100% - 32px); width: max-content; padding: 10px 16px; border-radius: 999px;
+  background: var(--ink); color: var(--card); font: 600 14px/1.3 var(--font-body); text-align: center;
+  box-shadow: 0 8px 24px rgb(var(--shadow-rgb) / .25);
+  opacity: 0; transform: translate(-50%, -10px); pointer-events: none;
+  transition: opacity .2s ease, transform .25s ease;
+}
+.toast.show { opacity: 1; transform: translate(-50%, 0); }
+.fx { position: fixed; inset: 0; width: 100%; height: 100%; z-index: 11; pointer-events: none; }
+
+@media (prefers-reduced-motion: reduce) {
+  .sheet, .sheet.open, .history { transition-duration: .01s !important; }
+  .die-hit.hint::after, .view, .check-badge.play, #vTimer[data-st="fin"] .ring-track { animation: none !important; }
+  .check-badge.play path { animation: none; stroke-dashoffset: 0; }
+  .fb-die.fb-roll, .fb-die.fb-wig { animation: none; }
+}
+</style>
+</head>
+<body>
+<canvas id="scene" aria-hidden="true"></canvas>
+
+<header class="topbar">
+  <p class="brand"><svg class="face" viewBox="0 0 24 24" aria-hidden="true"><rect x=".75" y=".75" width="22.5" height="22.5" rx="6"/><circle cx="6.5" cy="6.5" r="2.4"/><circle cx="17.5" cy="6.5" r="2.4"/><circle cx="12" cy="12" r="2.4"/><circle cx="6.5" cy="17.5" r="2.4"/><circle cx="17.5" cy="17.5" r="2.4"/></svg><span>Momentum Dice</span></p>
+  <div class="tools">
+    <button id="soundBtn" class="icon-btn" type="button" aria-pressed="true" aria-label="Sound">
+      <svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9.5v5h3.5L12 18.5v-13L7.5 9.5H4z"/><path id="soundOn" d="M15.5 9a4 4 0 0 1 0 6M18.2 6.4a7.6 7.6 0 0 1 0 11.2"/><path id="soundOff" d="M16 9.5l5 5M21 9.5l-5 5" hidden/></svg>
+    </button>
+    <button id="histBtn" class="icon-btn" type="button" aria-label="History" aria-haspopup="dialog">
+      <svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M3.6 12a8.4 8.4 0 1 0 2.6-6.1"/><path d="M3.6 4.4v4.1h4.1"/><path d="M12 7.6V12l3 2"/></svg>
+    </button>
+  </div>
+</header>
+
+<button id="dieBtn" class="die-hit hint" type="button" aria-label="Roll the die"></button>
+
+<section id="sheet" class="sheet open" aria-label="Momentum task">
+  <div id="vIdle" class="view">
+    <div class="idle-head">
+      <p class="prompt">Tap the die to roll</p>
+      <p class="today" id="todayLine">Sixty moves. The die picks one.</p>
+    </div>
+    <ol class="legend" id="legend" aria-label="The six faces"></ol>
+  </div>
+
+  <div id="vTask" class="view" hidden>
+    <div class="task-top">
+      <p class="eyebrow"><span id="tFace"></span><span id="tEyebrow">Rolled a 4</span></p>
+      <span class="chip" id="tChip">~10 min</span>
+    </div>
+    <h2 class="task-title" id="tTitle">Full Reset Walk</h2>
+    <div class="task-body">
+      <section><h3 class="label">Do this</h3><p class="do-text" id="tDo"></p></section>
+      <section><h3 class="label">Why it works</h3><p class="why-text" id="tWhy"></p></section>
+    </div>
+    <div class="actions">
+      <button id="timerBtn" class="btn btn-secondary" type="button">
+        <svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="13.5" r="7.5"/><path d="M12 13.5V10M9.5 2.5h5M18.6 6.4 20 5"/></svg>
+        <span id="timerBtnLabel">Start timer</span>
+      </button>
+      <button id="doneBtn" class="btn btn-primary" type="button">
+        <svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>
+        Mark done
+      </button>
+    </div>
+  </div>
+
+  <div id="vTimer" class="view" data-st="ready" hidden>
+    <div class="timer-head">
+      <button id="timerBack" class="link-btn" type="button"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M15 5l-7 7 7 7"/></svg>Task</button>
+      <p class="eyebrow" id="tmTitle">Full Reset Walk</p>
+    </div>
+    <div class="ring-wrap">
+      <svg class="ring" viewBox="0 0 220 220" aria-hidden="true"><circle class="ring-track" cx="110" cy="110" r="96"/><circle class="ring-fill" id="ringFill" cx="110" cy="110" r="96" stroke-dasharray="603.19" stroke-dashoffset="0"/></svg>
+      <div class="ring-center">
+        <div class="clock" id="clock" role="timer" aria-live="off">10:00</div>
+        <div class="clock-state" id="clockState">Ready</div>
+      </div>
+    </div>
+    <div class="stepper" id="stepper">
+      <button id="minus" class="step-btn" type="button" aria-label="One minute less"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 12h12"/></svg></button>
+      <output id="stepVal" class="step-val" for="minus plus">10 min</output>
+      <button id="plus" class="step-btn" type="button" aria-label="One minute more"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 12h12M12 6v12"/></svg></button>
+    </div>
+    <p class="hint-line" id="tmSuggest">Suggested 10 to 12 min</p>
+    <div class="actions" id="timerActions">
+      <button id="tmReset" class="btn btn-secondary" type="button">Reset</button>
+      <button id="tmStart" class="btn btn-primary" type="button"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5.5v13l10.5-6.5z"/></svg>Start</button>
+      <button id="tmPause" class="btn btn-primary" type="button"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M9 5.5v13M15 5.5v13"/></svg>Pause</button>
+      <button id="tmResume" class="btn btn-primary" type="button"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5.5v13l10.5-6.5z"/></svg>Resume</button>
+      <button id="tmDone" class="btn btn-primary" type="button"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>Mark done</button>
+    </div>
+    <div class="early" id="early"><button id="earlyDone" class="link-btn" type="button">Finished early? Mark done</button></div>
+  </div>
+
+  <div id="vDone" class="view" hidden>
+    <p class="eyebrow"><span id="dFace"></span><span id="dEyebrow">Full Reset Walk</span></p>
+    <div class="done-hero">
+      <div class="check-badge" id="dBadge"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5.5 12.5l4 4 9-9"/></svg></div>
+      <div>
+        <h2 class="done-title">Nice work!</h2>
+        <p class="done-sub" id="dSub">Logged.</p>
+      </div>
+    </div>
+    <p class="done-stats" id="dStats"></p>
+    <div class="actions">
+      <button id="undoBtn" class="btn btn-ghost" type="button">Undo</button>
+      <button id="againBtn" class="btn btn-primary" type="button">
+        <svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M4.5 12a7.5 7.5 0 0 1 12.9-5.2L19.5 9M19.5 4.5V9H15M19.5 12a7.5 7.5 0 0 1-12.9 5.2L4.5 15M4.5 19.5V15H9"/></svg>
+        Roll again
+      </button>
+    </div>
+  </div>
+</section>
+
+<div id="scrim" class="scrim"></div>
+<section id="hist" class="history" role="dialog" aria-modal="true" aria-labelledby="histTitle" hidden>
+  <div class="hist-head">
+    <h2 id="histTitle">History</h2>
+    <button id="histClose" class="icon-btn" type="button" aria-label="Close history"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18"/></svg></button>
+  </div>
+  <div class="hist-body" id="histBody"></div>
+</section>
+
+<div id="toast" class="toast" role="status" aria-live="polite"></div>
+<div id="sr" class="sr-only" aria-live="polite"></div>
+<canvas id="fx" class="fx" aria-hidden="true"></canvas>
+
+<script>
+(function () {
+'use strict';
+
+/* ================= basics ================= */
+const root = document.documentElement;
+const $ = (s, el = document) => el.querySelector(s);
+const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
+const lerp = (a, b, t) => a + (b - a) * t;
+const rand = (a, b) => a + Math.random() * (b - a);
+const mqReduce = matchMedia('(prefers-reduced-motion: reduce)');
+const reduced = () => mqReduce.matches;
+const tok = name => getComputedStyle(root).getPropertyValue(name).trim();
+const THREE_URL = 'https://cdn.jsdelivr.net/npm/three@0.149.0/build/three.min.js';
+
+// Each face is a theme with ten moves. The first move on each face is the original task.
+// Move ids are stored in history, so keep them stable when editing copy.
+const mv = (id, title, time, min, doThis, why) => ({ id, title, time, min, doThis, why });
+const FACES = [
+  { n: 1, name: 'Body Shock', time: '2 to 4 min',
+    done: ['Body reset.', 'Blood’s moving.', 'Energy back online.'],
+    moves: [
+      mv('body-shock', 'The Body Shock', '2 to 4 min', 3,
+        'Do 20 push-ups and 15 squats, then 1 minute of box breathing (in 4, hold 4, out 4, hold 4).',
+        'Gets oxygen to your brain, grounds you fast, and breaks mental loops. It’s a physical reset button.'),
+      mv('cold-water', 'Cold Water Wake-Up', '2 min', 2,
+        'Splash cold water on your face 10 times, or finish your next shower with 30 seconds of cold. Breathe slowly through your nose while it stings.',
+        'Cold flips your alertness switch in seconds. It’s hard to stay stuck in your head when your face is freezing.'),
+      mv('wall-sit', 'Wall Sit Hold', '3 min', 3,
+        'Slide down a wall until your knees bend to 90 degrees. Hold for 45 seconds, rest for 15, and do 3 rounds. Breathe through your nose the whole way.',
+        'Staying calm through the burn trains you to handle discomfort. Your legs wake up, and your focus follows.'),
+      mv('sprint-in-place', 'Sprint in Place', '3 min', 3,
+        'Run in place with high knees, as fast as you can, for 30 seconds. Walk it off for 30. Do 3 rounds.',
+        'Short, all-out bursts get your heart pumping and burn off brain fog in minutes.'),
+      mv('shake-out', 'The Shake Out', '2 min', 2,
+        'Stand up and shake out your hands, arms, shoulders, and legs for 60 seconds. Bounce on your heels. Finish with 3 long, slow exhales.',
+        'Shaking loosens tension you didn’t know you were holding. Long exhales tell your body it can stand down.'),
+      mv('double-sigh', 'Double Sigh', '2 min', 2,
+        'Breathe in deep through your nose, then sneak in a second short inhale on top. Let it all out slowly through your mouth. Repeat for 2 minutes.',
+        'The double inhale fully opens your lungs, and the long exhale slows your heart. It’s one of the fastest ways to calm down on purpose.'),
+      mv('plank-breathe', 'Plank and Breathe', '3 min', 3,
+        'Hold a plank for 45 seconds, then rest for 15. Do 3 rounds. Keep your core tight and breathe slowly through your nose.',
+        'Your whole body works as one unit. Calm breathing under strain builds composure you carry into the rest of your day.'),
+      mv('stair-blast', 'Stair Blast', '3 to 4 min', 4,
+        'Climb a flight of stairs at a strong pace, walk back down, and repeat for 3 minutes. No stairs? Do step-ups on a sturdy step or curb.',
+        'In one study, 10 minutes of stair walking energized people more than a small dose of caffeine. A few minutes still gets your blood moving.'),
+      mv('posture-reset', 'Posture Reset', '2 to 3 min', 3,
+        'Stand with your heels, hips, shoulders, and head against a wall. Slowly slide your arms up and down the wall 10 times. Finish with 5 neck rolls each way.',
+        'Hours of hunching tighten your chest and cramp your breathing. Opening up lets you breathe deep and stand taller.'),
+      mv('dance-break', 'One-Song Dance Break', '3 to 4 min', 4,
+        'Put on one song you love and move for the whole thing. Go big. Nobody’s watching.',
+        'Music plus movement is one of the quickest mood lifts there is. One song is enough to change your state.'),
+    ] },
+  { n: 2, name: 'Social Spark', time: '5 to 7 min',
+    done: ['Spark sent.', 'Connection made.', 'Someone’s day just got better.'],
+    moves: [
+      mv('social-spark', 'Social Spark', '5 to 7 min', 5,
+        'Text or call someone you appreciate or haven’t talked to in a while. Share a short, sincere compliment or thank them for something.',
+        'You shift from self-focus to connection. It builds energy and opens doors you didn’t see coming.'),
+      mv('specific-thanks', 'The Specific Thank You', '5 min', 5,
+        'Think of one thing someone did that helped you, big or small. Send them a message that names exactly what they did and how it helped.',
+        'Specific thanks land harder than a generic one. Most people never hear the impact they had, so yours will stick.'),
+      mv('voice-memo', 'Voice Memo Hello', '5 min', 5,
+        'Send a friend a 60-second voice memo. Tell them what made you think of them, or share one good thing from your week.',
+        'Hearing your voice feels closer than reading a text. It’s warm for them, with zero pressure to reply right away.'),
+      mv('throwback-photo', 'Throwback Photo', '5 min', 5,
+        'Scroll back a year or more in your photos. Find one with a friend in it and send it with a line about that day.',
+        'Shared memories reconnect people fast. It’s the easiest way to restart a conversation that went quiet.'),
+      mv('brag-about', 'Brag About Someone', '5 to 7 min', 6,
+        'Praise someone where others can see it. Leave a glowing review for a small business, give a teammate a shout-out, or tell someone’s boss what they did well.',
+        'Public recognition carries extra weight. You lift their reputation and build goodwill in one move.'),
+      mv('better-question', 'Ask a Better Question', '5 min', 5,
+        'Message someone you care about with one real question instead of “how are you.” For example: “What’s been the best part of your week?”',
+        'Good questions show you care about someone’s inner world. Depth builds the closeness small talk can’t.'),
+      mv('strong-one', 'Check On the Strong One', '5 min', 5,
+        'Text the friend who always holds it together for everyone else. Ask how they’re really doing, and mean it.',
+        'The people who support everyone are often the last ones asked. A small check-in can mean a lot.'),
+      mv('make-intro', 'Make the Intro', '6 to 7 min', 7,
+        'Think of two people who should know each other. Send a short intro that explains why they’ll click, then step back.',
+        'Connecting people is one of the most generous moves you can make. It grows your circle without asking anything of anyone.'),
+      mv('make-plan', 'Make the Plan', '5 min', 5,
+        'Pick someone you keep telling “we should hang out.” Send them a specific day, time, and place.',
+        'Vague plans rarely happen. A concrete invite turns good intentions into time together.'),
+      mv('thank-mentor', 'Thank a Mentor', '5 to 7 min', 6,
+        'Write to a teacher, coach, boss, or mentor who shaped you. Tell them one lesson of theirs you still use.',
+        'Most mentors never find out how their advice played out. Your note could make their week.'),
+    ] },
+  { n: 3, name: 'Mental Clarity', time: '5 to 6 min',
+    done: ['Head cleared.', 'Fog lifted.', 'Mind decluttered.'],
+    moves: [
+      mv('clarity-cleanse', 'Mental Clarity Cleanse', '5 to 6 min', 5,
+        'Write down three tasks clouding your mind. Beside each, write the smallest next step. Then cross one off right now.',
+        'Gets the clutter out of your head and onto paper. Clarity and focus come back fast.'),
+      mv('brain-dump', 'Brain Dump', '5 min', 5,
+        'Set a 5-minute timer and write down everything on your mind: tasks, worries, ideas, errands. Don’t sort it. Empty it.',
+        'Your brain is built for having ideas, not holding them. Once it’s on paper, your mind stops replaying it.'),
+      mv('first-domino', 'First Domino', '5 min', 5,
+        'Ask yourself: what’s the one thing I could do today that makes everything else easier or unnecessary? Write it down and block time for it.',
+        'One clear priority beats a long list of maybes. It gives the whole day a direction.'),
+      mv('worry-sort', 'Worry Sort', '5 to 6 min', 6,
+        'List what’s worrying you. Split it into two columns: what you can control and what you can’t. Circle one action from the first column to do today.',
+        'Sorting worry from action shrinks the problem. You stop spending energy on things you can’t change.'),
+      mv('name-feeling', 'Name the Feeling', '5 min', 5,
+        'Finish this sentence in writing: “Right now I feel...” Be precise. Then write why, and one thing that would help.',
+        'Putting a precise name on a feeling turns down its volume. Once you know what you feel, the next move gets clearer.'),
+      mv('define-done', 'Define Done', '5 min', 5,
+        'Pick a task you’ve been avoiding. Write one sentence on what done looks like, then the first step that takes under 2 minutes. Do that step now.',
+        'Fuzzy tasks feel bigger than they are. A clear finish line and a tiny first step break the stall.'),
+      mv('three-good', 'Three Good Things', '5 min', 5,
+        'Write down three things that went well recently. Next to each, write why it happened.',
+        'Your brain scans for problems by default. Training it to spot wins rebalances your outlook.'),
+      mv('decide-paper', 'Decide on Paper', '6 min', 6,
+        'Write down a decision you keep circling. List the pros and cons in two columns. Then write what you’d tell a friend to do.',
+        'Decisions held in your head run in loops. On paper you can see them, and advising a friend cuts through your own bias.'),
+      mv('open-loops', 'Close Open Loops', '5 to 6 min', 6,
+        'List every small unfinished thing nagging you: replies, returns, calls. Do anything that takes under 2 minutes now, and schedule the rest.',
+        'Unfinished tasks keep tugging at your attention. Finishing a few and planning the rest quiets the noise.'),
+      mv('test-thought', 'Test the Thought', '5 min', 5,
+        'Write down one thought that keeps bugging you. Ask: is it true? Is there a more accurate way to see it? Write that version underneath.',
+        'Thoughts feel like facts until you test them. A rewrite gives you a calmer, more honest view.'),
+    ] },
+  { n: 4, name: 'Reset Walk', time: 'About 10 min',
+    done: ['Walk complete.', 'Reset complete.', 'Back with a clearer head.'],
+    moves: [
+      mv('reset-walk', 'Full Reset Walk', 'About 10 min', 10,
+        'Walk with no phone, podcast, or input. Just you and your surroundings.',
+        'Movement + stillness = magic. It reconnects mind and body and primes your creativity.'),
+      mv('five-senses', 'Five Senses Walk', '10 min', 10,
+        'Leave your phone behind. As you walk, find 5 things you can see, 4 you can hear, 3 you can feel, 2 you can smell, and 1 you’ve never noticed before. Repeat.',
+        'Pulling your attention into your senses quiets the mental chatter. You come back calmer and more present.'),
+      mv('daylight-walk', 'Daylight Walk', '10 min', 10,
+        'Get outside in daylight and walk without your phone. Skip the sunglasses if it’s comfortable, and never look straight at the sun.',
+        'Daylight is your body clock’s strongest signal. It lifts alertness now and helps you sleep better tonight.'),
+      mv('nose-walk', 'Nose-Only Walk', '10 min', 10,
+        'Walk at a steady pace, breathing only through your nose. If you need to open your mouth, slow down until you don’t.',
+        'Nasal breathing keeps you in a calm, steady zone. It trains your body to do more with less strain.'),
+      mv('problem-walk', 'Problem Walk', '10 min', 10,
+        'Pick one problem before you head out. Walk with no input and let your mind wander around it. Don’t force an answer.',
+        'In one study, people came up with about 60% more creative ideas while walking. Your brain connects the dots when you stop pushing.'),
+      mv('slow-walk', 'Slow Walk', '10 min', 10,
+        'Walk at half your normal speed. Feel each step land. When your mind drifts, bring it back to your feet.',
+        'Slowing your body slows your mind. It’s meditation for people who can’t sit still.'),
+      mv('new-route', 'New Route', '10 min', 10,
+        'Take a route you’ve never walked, even if it’s the other side of the block. Leave the phone and look up.',
+        'Novelty wakes up your attention. A new path turns ten minutes into a small adventure.'),
+      mv('gratitude-loop', 'Gratitude Loop', '10 min', 10,
+        'Walk without your phone. Every minute or so, name one thing you’re grateful for, out loud or in your head.',
+        'Gratitude points your attention at what’s working. Pair it with a walk and you come back lighter.'),
+      mv('green-walk', 'Green Space Walk', '10 min', 10,
+        'Head for the greenest spot nearby: a park, trees, water, or a planted street. Walk slowly and take in the details, like leaves, clouds, and birds.',
+        'Time around nature lowers stress and restores tired attention. Ten minutes counts.'),
+      mv('step-breathing', 'Step Breathing', '10 min', 10,
+        'Match your breath to your steps: in for 4 steps, out for 6. Hold that rhythm for the whole walk.',
+        'A longer exhale slows your heart rate. Counting steps gives a busy mind one simple job.'),
+    ] },
+  { n: 5, name: 'Environment Refresh', time: '10 to 12 min',
+    done: ['Space reset.', 'Less clutter, more calm.', 'Fresh space, fresh start.'],
+    moves: [
+      mv('env-refresh', 'Environment Refresh', '10 to 12 min', 10,
+        'Tidy or reorganize your workspace or another key area. Wipe surfaces, remove distractions, and reset the space.',
+        'Clears outside clutter, sharpens your focus, and removes friction for deeper work.'),
+      mv('ten-toss', 'Ten-Item Toss', '10 min', 10,
+        'Walk through your space and remove 10 things you don’t need: trash, duplicates, old papers, things to donate. Bag them and get them out the door.',
+        'Every object asks for a sliver of your attention. Fewer things means fewer tiny distractions.'),
+      mv('digital-sweep', 'Digital Desk Sweep', '10 min', 10,
+        'Clear your computer desktop and downloads folder. Delete what you don’t need, file the rest, and close every tab you aren’t using.',
+        'Digital clutter drains focus the same way physical clutter does. A clean screen is a clean start.'),
+      mv('kitchen-reset', 'Kitchen Reset', '10 to 12 min', 12,
+        'Clear the sink, load or run the dishwasher, wipe the counters, and take out the trash.',
+        'A clean kitchen is a gift to the next version of you. It also silences a chore that nags in the background.'),
+      mv('home-screen', 'Home Screen Detox', '10 min', 10,
+        'Move distracting apps off your phone’s home screen, delete apps you don’t use, and turn off notifications you don’t need.',
+        'Your phone is part of your environment. Fewer triggers in sight means fewer pulls on your attention.'),
+      mv('one-drawer', 'One Drawer', '10 min', 10,
+        'Pick your messiest drawer, shelf, or bag. Empty it completely, toss what doesn’t belong, and put back only what earns its spot.',
+        'Small, finished wins build momentum. One clean drawer proves you can tame the rest.'),
+      mv('light-air', 'Light and Air', '10 min', 10,
+        'Open the blinds and a window. Dust the sills and lamps, water any plants, and move anything that blocks the light.',
+        'Brighter, fresher rooms lift your energy. Small changes to light and air change how a whole space feels.'),
+      mv('floor-reset', 'Floor Reset', '10 min', 10,
+        'Pick up everything on the floor of one room and put it where it belongs. Then sweep or vacuum.',
+        'A clear floor makes a whole room feel calmer. It’s one of the quickest visual resets you can do.'),
+      mv('bedside-reset', 'Bedside Reset', '10 min', 10,
+        'Clear your nightstand down to what helps you sleep, like a lamp, water, and a book. Make the bed and straighten the room.',
+        'Your bedroom should signal rest. A calm space makes winding down easier tonight.'),
+      mv('launch-pad', 'Launch Pad', '10 to 12 min', 12,
+        'Clear the spot by your door. Give your keys, wallet, and bag one home, and put away the shoes and jackets that pile up there.',
+        'A set place for essentials ends the morning scramble. Your brain stops having to remember where things are.'),
+    ] },
+  { n: 6, name: 'Future Self Favor', time: '7 to 10 min',
+    done: ['Tomorrow just got easier.', 'Future you says thanks.', 'One less thing tomorrow.'],
+    moves: [
+      mv('future-favor', 'Future Self Favor', '7 to 10 min', 7,
+        'Do one small task that makes tomorrow easier. For example, prep lunch, lay out your clothes, or answer one email you’ve been avoiding.',
+        'Cuts tomorrow’s stress, builds proactive habits, and sets up smooth transitions.'),
+      mv('top-three', 'Tomorrow’s Top Three', '7 min', 7,
+        'Write down tomorrow’s three most important tasks. Put the hardest one first and decide when you’ll start it.',
+        'Deciding tonight saves your best morning energy for doing instead of deciding.'),
+      mv('pack-bag', 'Pack the Bag', '7 min', 7,
+        'Pack everything you’ll need tomorrow: laptop, chargers, keys, water bottle. Set the bag by the door.',
+        'Mornings are when decisions feel hardest. Packing tonight erases the rush and the forgotten-charger moment.'),
+      mv('lookahead', 'Three-Day Lookahead', '7 to 10 min', 8,
+        'Scan the next three days on your calendar. Prep anything that needs it: confirm a time, gather a document, set a reminder.',
+        'Surprises cause stress. A quick look ahead turns tomorrow’s scrambles into today’s small tasks.'),
+      mv('money-minute', 'Money Minute', '7 to 10 min', 8,
+        'Pay one bill, cancel one subscription you don’t use, or set up one autopay you keep meaning to.',
+        'Small money chores create outsized worry. Knock one out and buy yourself peace of mind.'),
+      mv('snack-setup', 'Snack Setup', '7 to 10 min', 8,
+        'Wash and cut some fruit or veggies, portion out snacks, or fill a water bottle and put it in the fridge for tomorrow.',
+        'When the healthy choice is ready to grab, it becomes the easy choice. You’re setting tomorrow up to win.'),
+      mv('shutdown', 'Shutdown Ritual', '7 min', 7,
+        'End your work on purpose. Write where you left off and the very next step, then close every app and tab.',
+        'A clear stopping point lets your brain let go tonight. Tomorrow you start fast instead of hunting for where you were.'),
+      mv('book-it', 'Book It', '7 to 10 min', 8,
+        'Schedule one appointment you’ve been putting off, like the dentist, a checkup, a haircut, or a car service.',
+        'Booking takes minutes. Avoiding it costs weeks of low-grade guilt.'),
+      mv('automate', 'Automate One Thing', '10 min', 10,
+        'Pick something you repeat every week and automate it: a recurring reminder, a saved template, a repeat order, or an autopay.',
+        'Every automation is one less decision, forever. Small systems compound.'),
+      mv('sleep-setup', 'Sleep Setup', '7 min', 7,
+        'Set the stage for tonight: dim the lights, set your alarm, charge your phone outside the bedroom, and pour a glass of water.',
+        'Good sleep powers everything tomorrow asks of you. Setting the stage now makes it easier to drift off.'),
+    ] },
+];
+const faceOf = n => FACES[n - 1];
+const MOVES = new Map();
+for (const f of FACES) for (const m of f.moves) MOVES.set(m.id, m);
+// Rolls saved before the task pool existed have no move id; they were the original task.
+const moveOf = r => MOVES.get(r.k) || faceOf(r.n).moves[0];
+const doneLineOf = r => { const lines = faceOf(r.n).done; let h = 0; for (const ch of r.id) h = (h * 31 + ch.charCodeAt(0)) >>> 0; return lines[h % lines.length]; };
+
+// Pip centers on a unit face. Shared by the SVG glyphs and the 3D die textures.
+const PIPS = {
+  1: [[.5, .5]],
+  2: [[.73, .27], [.27, .73]],
+  3: [[.73, .27], [.5, .5], [.27, .73]],
+  4: [[.27, .27], [.73, .27], [.27, .73], [.73, .73]],
+  5: [[.27, .27], [.73, .27], [.5, .5], [.27, .73], [.73, .73]],
+  6: [[.27, .25], [.27, .5], [.27, .75], [.73, .25], [.73, .5], [.73, .75]],
+};
+function faceSVG(n) {
+  const r = n === 1 ? 3.4 : 2.4;
+  const dots = PIPS[n].map(([x, y]) => `<circle cx="${(x * 24).toFixed(2)}" cy="${(y * 24).toFixed(2)}" r="${r}"/>`).join('');
+  return `<svg class="face" viewBox="0 0 24 24" aria-hidden="true"><rect x=".75" y=".75" width="22.5" height="22.5" rx="6"/>${dots}</svg>`;
+}
+
+const fmtTime = ms => new Intl.DateTimeFormat(undefined, { hour: 'numeric', minute: '2-digit' }).format(ms);
+const fmtDay = ms => new Intl.DateTimeFormat(undefined, { weekday: 'short', month: 'short', day: 'numeric' }).format(ms);
+const dayKey = ms => { const d = new Date(ms); return d.getFullYear() * 10000 + (d.getMonth() + 1) * 100 + d.getDate(); };
+const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
+
+// Uniform integer in [0, n) with rejection sampling, so no value is favored by modulo bias.
+function randInt(n) {
+  if (window.crypto && crypto.getRandomValues) {
+    const b = new Uint32Array(1), lim = Math.floor(0x100000000 / n) * n;
+    for (;;) { crypto.getRandomValues(b); if (b[0] < lim) return b[0] % n; }
+  }
+  return Math.floor(Math.random() * n);
+}
+const randomFace = () => randInt(6) + 1;
+
+function h(tag, props, ...kids) {
+  const el = document.createElement(tag);
+  if (props) for (const k in props) {
+    const v = props[k];
+    if (k === 'class') el.className = v;
+    else if (k === 'html') el.innerHTML = v;
+    else if (k.startsWith('on')) el.addEventListener(k.slice(2), v);
+    else el.setAttribute(k, v);
+  }
+  for (const c of kids.flat()) if (c != null && c !== false) el.append(c.nodeType ? c : String(c));
+  return el;
+}
+
+/* ================= state + storage ================= */
+const KEY = 'momentum-dice/v1';
+let storageOK = true;
+const state = { v: 1, rolls: [], currentId: null, timer: null, sound: true, decks: {}, skin: 'midnight' };
+
+function load() {
+  try {
+    const raw = localStorage.getItem(KEY);
+    if (!raw) return;
+    const d = JSON.parse(raw);
+    if (!d || !Array.isArray(d.rolls)) return;
+    state.rolls = d.rolls.filter(r => r && typeof r.id === 'string' && r.n >= 1 && r.n <= 6 && typeof r.at === 'number')
+      .map(r => ({ id: r.id, n: r.n, k: MOVES.has(r.k) ? r.k : faceOf(r.n).moves[0].id, at: r.at, done: typeof r.done === 'number' ? r.done : null }));
+    state.currentId = typeof d.currentId === 'string' ? d.currentId : null;
+    const t = d.timer;
+    state.timer = t && typeof t.id === 'string' && typeof t.dur === 'number' ? t : null;
+    state.sound = d.sound !== false;
+    if (d.decks && typeof d.decks === 'object') state.decks = d.decks;
+    if (typeof d.skin === 'string') state.skin = d.skin;
+  } catch (e) { storageOK = false; }
+}
+function save() {
+  try { localStorage.setItem(KEY, JSON.stringify(state)); }
+  catch (e) {
+    if (storageOK) toast('This browser is blocking storage, so history resets when the page closes.', 4200);
+    storageOK = false;
+  }
+}
+const current = () => state.rolls.find(r => r.id === state.currentId) || null;
+
+// Each face deals its ten moves like a shuffled deck: you see all ten before any repeats,
+// and a fresh shuffle never starts with the move you got last time.
+function drawMove(n) {
+  const ids = faceOf(n).moves.map(m => m.id);
+  let deck = Array.isArray(state.decks[n]) ? state.decks[n].filter(id => ids.includes(id)) : [];
+  if (!deck.length) {
+    deck = ids.slice();
+    for (let i = deck.length - 1; i > 0; i--) { const j = randInt(i + 1); [deck[i], deck[j]] = [deck[j], deck[i]]; }
+    const prev = [...state.rolls].reverse().find(r => r.n === n);
+    if (prev && deck[0] === prev.k) [deck[0], deck[1]] = [deck[1], deck[0]];
+  }
+  const id = deck.shift();
+  state.decks[n] = deck;
+  return id;
+}
+
+/* ================= skins ================= */
+// Visual themes. To add one later: write a :root[data-skin="id"] token block in the CSS and list it here.
+// unlockAt is the completed-task count that would unlock it; nothing reads it yet.
+const SKINS = [{ id: 'midnight', name: 'Midnight', unlockAt: 0 }];
+function applySkin(id) {
+  const skin = SKINS.find(s => s.id === id) || SKINS[0];
+  state.skin = skin.id;
+  if (skin === SKINS[0]) delete root.dataset.skin; else root.dataset.skin = skin.id;
+}
+
+function streak() {
+  const days = new Set(state.rolls.filter(r => r.done).map(r => dayKey(r.done)));
+  const d = new Date(); d.setHours(12, 0, 0, 0);
+  if (!days.has(dayKey(d.getTime()))) d.setDate(d.getDate() - 1);  // today not done yet still counts as alive
+  let s = 0;
+  while (days.has(dayKey(d.getTime()))) { s++; d.setDate(d.getDate() - 1); }
+  return s;
+}
+function stats() {
+  const today = dayKey(Date.now());
+  let rolledToday = 0, doneToday = 0, doneAll = 0;
+  for (const r of state.rolls) {
+    if (dayKey(r.at) === today) rolledToday++;
+    if (r.done) { doneAll++; if (dayKey(r.done) === today) doneToday++; }
+  }
+  return { rolledToday, doneToday, doneAll, streak: streak() };
+}
+function todayLine() {
+  if (!state.rolls.length) return 'Sixty moves. The die picks one.';
+  const s = stats();
+  if (s.doneToday) return `${s.doneToday} done today` + (s.streak > 1 ? ` · ${s.streak}-day streak` : '');
+  if (s.streak) return `${s.streak}-day streak. Roll to keep it going.`;
+  return 'Nothing done yet today.';
+}
+
+/* ================= feedback: toast, screen reader ================= */
+let toastT = 0;
+function toast(msg, ms = 2600) {
+  const el = $('#toast');
+  el.textContent = msg; el.classList.add('show');
+  clearTimeout(toastT); toastT = setTimeout(() => el.classList.remove('show'), ms);
+}
+function announce(msg) { const el = $('#sr'); el.textContent = ''; setTimeout(() => { el.textContent = msg; }, 30); }
+
+/* ================= sound (synthesized, no files) ================= */
+const Sound = (() => {
+  let ctx = null, out = null, noise = null;
+  // Only touch audio inside a real gesture; browsers refuse (and warn) otherwise.
+  const inGesture = () => !navigator.userActivation || navigator.userActivation.isActive;
+  function unlock() {
+    if (!inGesture()) return;
+    try {
+      if (!ctx) {
+        const AC = window.AudioContext || window.webkitAudioContext;
+        if (!AC) return;
+        ctx = new AC();
+        const comp = ctx.createDynamicsCompressor();
+        comp.threshold.value = -16; comp.ratio.value = 4;
+        out = ctx.createGain(); out.gain.value = .9;
+        out.connect(comp); comp.connect(ctx.destination);
+        const len = Math.floor(ctx.sampleRate * .6);
+        noise = ctx.createBuffer(1, len, ctx.sampleRate);
+        const d = noise.getChannelData(0);
+        for (let i = 0; i < len; i++) d[i] = Math.random() * 2 - 1;
+      }
+      if (ctx.state !== 'running') ctx.resume();
+    } catch (e) { /* audio is optional */ }
+  }
+  // Schedule even while resume() is still pending: a suspended context holds its clock,
+  // so sounds queued on the first tap still play in sync once it starts.
+  const ready = () => state.sound && ctx && ctx.state !== 'closed';
+  function env(g, t, peak, attack, decay) {
+    g.gain.setValueAtTime(.0001, t);
+    g.gain.exponentialRampToValueAtTime(Math.max(.0002, peak), t + attack);
+    g.gain.exponentialRampToValueAtTime(.0001, t + attack + decay);
+  }
+  // A resin die landing on felt: a soft thump plus a short filtered click.
+  function clack(t, s) {
+    const src = ctx.createBufferSource(); src.buffer = noise;
+    const bp = ctx.createBiquadFilter(); bp.type = 'bandpass'; bp.frequency.value = 1500 + Math.random() * 900; bp.Q.value = 1.6;
+    const g = ctx.createGain(); env(g, t, .55 * s, .002, .045);
+    src.connect(bp); bp.connect(g); g.connect(out);
+    src.start(t, Math.random() * .4); src.stop(t + .08);
+    const o = ctx.createOscillator(); o.type = 'sine';
+    o.frequency.setValueAtTime(230 + Math.random() * 60, t); o.frequency.exponentialRampToValueAtTime(95, t + .07);
+    const og = ctx.createGain(); env(og, t, .5 * s, .003, .085);
+    o.connect(og); og.connect(out); o.start(t); o.stop(t + .12);
+    const o2 = ctx.createOscillator(); o2.type = 'triangle'; o2.frequency.value = 1050 + Math.random() * 300;
+    const g2 = ctx.createGain(); env(g2, t, .1 * s, .001, .03);
+    o2.connect(g2); g2.connect(out); o2.start(t); o2.stop(t + .05);
+  }
+  function whoosh(t) {
+    const src = ctx.createBufferSource(); src.buffer = noise;
+    const bp = ctx.createBiquadFilter(); bp.type = 'bandpass'; bp.Q.value = .9;
+    bp.frequency.setValueAtTime(500, t); bp.frequency.exponentialRampToValueAtTime(2400, t + .22);
+    const g = ctx.createGain(); env(g, t, .07, .08, .2);
+    src.connect(bp); bp.connect(g); g.connect(out); src.start(t); src.stop(t + .32);
+  }
+  // Bell from inharmonic partials; reads as a soft chime instead of a beep.
+  function bell(t, f, vol, decay) {
+    [[1, 1, 1], [2.76, .32, .5], [5.4, .1, .25]].forEach(([m, a, dk]) => {
+      const o = ctx.createOscillator(); o.type = 'sine'; o.frequency.value = f * m;
+      const g = ctx.createGain(); env(g, t, vol * a, .006, decay * dk);
+      o.connect(g); g.connect(out); o.start(t); o.stop(t + decay * dk + .05);
+    });
+  }
+  return {
+    unlock,
+    roll(impacts) { if (!ready()) return; const t0 = ctx.currentTime + .01; whoosh(t0); impacts.forEach(([dt, s]) => clack(t0 + dt, s)); },
+    land() { if (!ready()) return; const t = ctx.currentTime + .03; bell(t, 784, .05, .9); bell(t + .09, 1175, .045, 1.1); },
+    done() { if (!ready()) return; const t = ctx.currentTime + .02; [1046.5, 1318.5, 1568, 2093].forEach((f, i) => bell(t + i * .075, f, .07, 1.3)); },
+    timesUp() { if (!ready()) return; const t = ctx.currentTime + .05; [0, 1.5].forEach(o => [880, 1318.5, 1760].forEach((f, i) => bell(t + o + i * .22, f, .09, 2.4))); },
+    blip() { if (!ready()) return; const t = ctx.currentTime + .01; bell(t, 1568, .035, .35); },
+  };
+})();
+
+/* ================= haptics (best effort) ================= */
+const Haptic = (() => {
+  const canVibrate = typeof navigator.vibrate === 'function';
+  // iOS Safari has no Vibration API; toggling a native switch control fires a system haptic on iOS 18+.
+  function iosTick() {
+    try {
+      const label = document.createElement('label');
+      label.setAttribute('aria-hidden', 'true'); label.style.display = 'none';
+      const input = document.createElement('input'); input.type = 'checkbox'; input.setAttribute('switch', '');
+      label.appendChild(input); document.head.appendChild(label); label.click(); label.remove();
+    } catch (e) { /* no haptics here */ }
+  }
+  const tapped = () => !navigator.userActivation || navigator.userActivation.hasBeenActive;
+  function buzz(p) { if (!tapped()) return; if (canVibrate) { try { navigator.vibrate(p); } catch (e) {} } else iosTick(); }
+  return {
+    tap: () => buzz(9),
+    success: () => buzz([14, 70, 26]),
+    alarm: () => buzz([220, 120, 220, 120, 320]),
+    roll(impacts) {
+      if (!tapped()) return;
+      if (canVibrate) {
+        const pattern = [8]; let end = 8;
+        for (const [t, s] of impacts) { const at = Math.round(t * 1000), d = Math.round(8 + 16 * s); pattern.push(Math.max(0, at - end), d); end = at + d; }
+        try { navigator.vibrate(pattern); } catch (e) {}
+      } else { iosTick(); impacts.forEach(([t]) => setTimeout(iosTick, t * 1000)); }
+    },
+  };
+})();
+
+/* ================= confetti: tiny dice and chips ================= */
+const FX = (() => {
+  const cv = $('#fx'), ctx = cv.getContext('2d');
+  let parts = [], raf = 0, last = 0;
+  function burst(x, y) {
+    if (reduced()) return;
+    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+    cv.width = innerWidth * dpr; cv.height = innerHeight * dpr; ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    const cols = [tok('--die'), tok('--felt'), tok('--good-fill'), tok('--ink'), tok('--rim')];
+    const pip = tok('--pip'), body = tok('--die');
+    for (let i = 0; i < 120; i++) {
+      const a = -Math.PI / 2 + rand(-1.05, 1.05), sp = rand(6, 15);
+      parts.push({ x: x + rand(-40, 40), y, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp, r: rand(0, 6.3), vr: rand(-.3, .3),
+        s: rand(7, 12), c: cols[i % cols.length], die: i % 4 === 0, body, pip, f: rand(0, 6.3), vf: rand(.08, .28) });
+    }
+    if (!raf) { last = performance.now(); raf = requestAnimationFrame(step); }
+  }
+  function rr(x, y, w, hh, r) { if (ctx.roundRect) { ctx.beginPath(); ctx.roundRect(x, y, w, hh, r); ctx.fill(); } else ctx.fillRect(x, y, w, hh); }
+  function step(now) {
+    const dt = Math.min(2.5, (now - last) / 16.67); last = now;
+    ctx.clearRect(0, 0, innerWidth, innerHeight);
+    parts = parts.filter(p => p.y < innerHeight + 40);
+    for (const p of parts) {
+      p.vy += .34 * dt; p.vx *= Math.pow(.985, dt); p.vy *= Math.pow(.992, dt);
+      p.x += p.vx * dt; p.y += p.vy * dt; p.r += p.vr * dt; p.f += p.vf * dt;
+      ctx.save(); ctx.translate(p.x, p.y); ctx.rotate(p.r); ctx.scale(1, Math.cos(p.f));
+      if (p.die) {
+        ctx.fillStyle = p.body; rr(-p.s / 2, -p.s / 2, p.s, p.s, p.s * .26);
+        ctx.fillStyle = p.pip; ctx.beginPath(); ctx.arc(0, 0, p.s * .17, 0, 6.3); ctx.fill();
+      } else { ctx.fillStyle = p.c; rr(-p.s / 2, -p.s * .3, p.s, p.s * .6, 2); }
+      ctx.restore();
+    }
+    if (parts.length) raf = requestAnimationFrame(step);
+    else { raf = 0; ctx.clearRect(0, 0, innerWidth, innerHeight); }
+  }
+  return { burst };
+})();
+
+/* ================= frame springs: where the die sits on screen ================= */
+const spring = (v, eps) => ({ v, t: v, eps });
+const frame = { fy: spring(.38, .0004), px: spring(120, .08), tx: spring(0, .0008), tz: spring(0, .0008) };
+function stepSpring(s, dt, k) {
+  const d = s.t - s.v;
+  if (Math.abs(d) <= s.eps) { s.v = s.t; return false; }
+  s.v += d * (1 - Math.exp(-k * dt));
+  return true;
+}
+function stepFrame(dt) {
+  let a = stepSpring(frame.fy, dt, 5);
+  a = stepSpring(frame.px, dt, 5) || a;
+  a = stepSpring(frame.tx, dt, 3.2) || a;
+  a = stepSpring(frame.tz, dt, 3.2) || a;
+  return a;
+}
+
+let Stage = null;
+let raf = 0, lastT = 0;
+function kick() { if (!raf) { lastT = performance.now(); raf = requestAnimationFrame(loop); } }
+function loop(now) {
+  raf = 0;
+  const dt = clamp((now - lastT) / 1000, 0, .05); lastT = now;
+  let active = stepFrame(dt);
+  if (Stage) { active = Stage.step(now, dt) || active; Stage.render(); placeDieBtn(); }
+  if (active && !raf) raf = requestAnimationFrame(loop);
+}
+const dieBtn = $('#dieBtn');
+function placeDieBtn() {
+  const p = Stage.screenPos(), s = Math.round(p.size);
+  dieBtn.style.width = dieBtn.style.height = s + 'px';
+  dieBtn.style.transform = `translate(${Math.round(p.x - s / 2)}px, ${Math.round(p.y - s / 2)}px)`;
+}
+
+/* ================= 3D die (three.js) ================= */
+function makeGL() {
+  const T = window.THREE;
+  if (!T || !T.WebGLRenderer) return null;
+  const canvas = $('#scene');
+  let renderer;
+  try { renderer = new T.WebGLRenderer({ canvas, antialias: true, alpha: true, powerPreference: 'high-performance' }); }
+  catch (e) { return null; }
+  if (T.ColorManagement && 'legacyMode' in T.ColorManagement) T.ColorManagement.legacyMode = false;
+  renderer.outputEncoding = T.sRGBEncoding;
+  renderer.setClearColor(0x000000, 0);
+  renderer.shadowMap.enabled = true;
+  renderer.shadowMap.type = T.PCFSoftShadowMap;
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+  const aniso = Math.min(8, renderer.capabilities.getMaxAnisotropy());
+
+  const scene = new T.Scene();
+  const cam = new T.PerspectiveCamera(26, 1, 1, 80);
+  const DIST = 18, EL = 57 * Math.PI / 180, SIN_EL = Math.sin(EL), COS_EL = Math.cos(EL);
+  const TAN_HALF = Math.tan(cam.fov * Math.PI / 360);
+  const UP = new T.Vector3(0, 1, 0), XAX = new T.Vector3(1, 0, 0);
+
+  // Die: 2 units on a side with 0.2 rounded edges. Box vertices are remapped so most of
+  // each face's grid sits in the rounded band, then projected onto the rounded surface with exact normals.
+  const SIZE = 2, HALF = 1, ROUND = .2, INNER = HALF - ROUND;
+  function roundedCube() {
+    const SEG = 14, A = 3 / 7;
+    const g = new T.BoxGeometry(SIZE, SIZE, SIZE, SEG, SEG, SEG);
+    const remap = s => { const a = Math.abs(s), v = a <= A ? (a / A) * INNER : INNER + ((a - A) / (1 - A)) * ROUND; return Math.sign(s) * v; };
+    const pos = g.attributes.position, nor = g.attributes.normal, uv = g.attributes.uv;
+    const v = new T.Vector3(), c = new T.Vector3(), d = new T.Vector3();
+    for (let i = 0; i < pos.count; i++) {
+      v.set(remap(pos.getX(i) / HALF), remap(pos.getY(i) / HALF), remap(pos.getZ(i) / HALF));
+      c.set(clamp(v.x, -INNER, INNER), clamp(v.y, -INNER, INNER), clamp(v.z, -INNER, INNER));
+      d.subVectors(v, c);
+      if (d.lengthSq() < 1e-10) d.set(nor.getX(i), nor.getY(i), nor.getZ(i));
+      d.normalize();
+      pos.setXYZ(i, c.x + d.x * ROUND, c.y + d.y * ROUND, c.z + d.z * ROUND);
+      nor.setXYZ(i, d.x, d.y, d.z);
+      uv.setXY(i, (remap(uv.getX(i) * 2 - 1) / HALF + 1) / 2, (remap(uv.getY(i) * 2 - 1) / HALF + 1) / 2);
+    }
+    pos.needsUpdate = nor.needsUpdate = uv.needsUpdate = true;
+    g.computeBoundingSphere();
+    return g;
+  }
+  // BoxGeometry groups: +X, -X, +Y, -Y, +Z, -Z. Opposite faces sum to 7.
+  const FACE_VALUES = [3, 4, 1, 6, 2, 5];
+  const NORMALS = { 3: [1, 0, 0], 4: [-1, 0, 0], 1: [0, 1, 0], 6: [0, -1, 0], 2: [0, 0, 1], 5: [0, 0, -1] };
+
+  function faceTextures(n, body, pip) {
+    const S = 512;
+    const mc = document.createElement('canvas'), bc = document.createElement('canvas');
+    mc.width = mc.height = bc.width = bc.height = S;
+    const m = mc.getContext('2d'), b = bc.getContext('2d');
+    m.fillStyle = body; m.fillRect(0, 0, S, S);
+    b.fillStyle = '#ffffff'; b.fillRect(0, 0, S, S);
+    const r = (n === 1 ? .12 : .086) * S;
+    // Dark pips read as dimples with a faint lit rim; light pips with a shaded rim.
+    const rimTone = luminance(pip) < .3 ? 'rgba(255,255,255,.22)' : 'rgba(60,30,10,.3)';
+    for (const [x, y] of PIPS[n]) {
+      const cx = x * S, cy = y * S;
+      m.fillStyle = pip; m.beginPath(); m.arc(cx, cy, r, 0, 7); m.fill();
+      const sg = m.createRadialGradient(cx + r * .2, cy + r * .25, r * .3, cx, cy, r);
+      sg.addColorStop(0, 'rgba(0,0,0,0)'); sg.addColorStop(.78, 'rgba(0,0,0,0)'); sg.addColorStop(1, rimTone);
+      m.fillStyle = sg; m.beginPath(); m.arc(cx, cy, r, 0, 7); m.fill();
+      const bg = b.createRadialGradient(cx, cy, 0, cx, cy, r * 1.05);
+      bg.addColorStop(0, '#5c5c5c'); bg.addColorStop(.7, '#868686'); bg.addColorStop(1, '#ffffff');
+      b.fillStyle = bg; b.beginPath(); b.arc(cx, cy, r * 1.05, 0, 7); b.fill();
+    }
+    const map = new T.CanvasTexture(mc); map.encoding = T.sRGBEncoding; map.anisotropy = aniso;
+    const bump = new T.CanvasTexture(bc); bump.anisotropy = aniso;
+    return { map, bump };
+  }
+  const dieMats = FACE_VALUES.map(() => new T.MeshPhysicalMaterial({
+    roughness: .34, metalness: 0, clearcoat: 1, clearcoatRoughness: .12, bumpScale: 1.6, envMapIntensity: 1,
+  }));
+  let dieColors = '';
+  function luminance(hex) {
+    const c = new T.Color(hex); return .2126 * c.r + .7152 * c.g + .0722 * c.b;  // linear, after sRGB decode
+  }
+  function paintDie() {
+    const body = tok('--die') || '#FFC83D', pip = tok('--pip') || '#111111';
+    if (body + pip === dieColors) return;
+    dieColors = body + pip;
+    FACE_VALUES.forEach((n, i) => {
+      const m = dieMats[i];
+      if (m.map) m.map.dispose(); if (m.bumpMap) m.bumpMap.dispose();
+      const tx = faceTextures(n, body, pip);
+      m.map = tx.map; m.bumpMap = tx.bump; m.needsUpdate = true;
+    });
+  }
+  const die = new T.Mesh(roundedCube(), dieMats);
+  die.castShadow = true;
+  scene.add(die);
+
+  // Coaster: felt disc, low rounded lip, thin outer edge, and a shadow catcher under it all.
+  const R_IN = 2.5, TUBE = .13, WALL = .16, LIP_Y = .03;
+  function feltTexture() {
+    const S = 512, cv = document.createElement('canvas'); cv.width = cv.height = S;
+    const g = cv.getContext('2d'), img = g.createImageData(S, S);
+    // Kept below white so the lit coaster lands near its token color instead of washing out.
+    for (let i = 0; i < img.data.length; i += 4) { const v = 192 + Math.random() * 34; img.data[i] = img.data[i + 1] = img.data[i + 2] = v; img.data[i + 3] = 255; }
+    g.putImageData(img, 0, 0);
+    const rg = g.createRadialGradient(S / 2, S / 2, S * .16, S / 2, S / 2, S / 2);
+    rg.addColorStop(0, 'rgba(255,255,255,.12)'); rg.addColorStop(.72, 'rgba(0,0,0,0)'); rg.addColorStop(1, 'rgba(0,0,0,.34)');
+    g.fillStyle = rg; g.fillRect(0, 0, S, S);
+    const t = new T.CanvasTexture(cv); t.encoding = T.sRGBEncoding; t.anisotropy = aniso; return t;
+  }
+  const feltMat = new T.MeshStandardMaterial({ map: feltTexture(), roughness: 1, metalness: 0, envMapIntensity: .12 });
+  const rimMat = new T.MeshStandardMaterial({ roughness: .48, metalness: 0, envMapIntensity: .55 });
+  const felt = new T.Mesh(new T.CircleGeometry(R_IN + .03, 96), feltMat);
+  felt.rotation.x = -Math.PI / 2; felt.receiveShadow = true;
+  const rim = new T.Mesh(new T.TorusGeometry(R_IN + TUBE * .6, TUBE, 20, 128), rimMat);
+  rim.rotation.x = -Math.PI / 2; rim.position.y = LIP_Y; rim.castShadow = true; rim.receiveShadow = true;
+  const wallR = R_IN + TUBE * 1.6;
+  const wall = new T.Mesh(new T.CylinderGeometry(wallR, wallR + .03, WALL, 96, 1, true), rimMat);
+  wall.position.y = LIP_Y - WALL / 2; wall.castShadow = true;
+  const ground = new T.Mesh(new T.PlaneGeometry(60, 60), new T.ShadowMaterial({ opacity: .2 }));
+  ground.rotation.x = -Math.PI / 2; ground.position.y = LIP_Y - WALL; ground.receiveShadow = true;
+  scene.add(felt, rim, wall, ground);
+
+  // Soft contact shadow that stays under the die and fades as it leaves the felt.
+  const blobTex = (() => {
+    const S = 128, cv = document.createElement('canvas'); cv.width = cv.height = S;
+    const g = cv.getContext('2d'), rg = g.createRadialGradient(S / 2, S / 2, 0, S / 2, S / 2, S / 2);
+    rg.addColorStop(0, 'rgba(0,0,0,1)'); rg.addColorStop(.45, 'rgba(0,0,0,.5)'); rg.addColorStop(1, 'rgba(0,0,0,0)');
+    g.fillStyle = rg; g.fillRect(0, 0, S, S); return new T.CanvasTexture(cv);
+  })();
+  const blob = new T.Mesh(new T.PlaneGeometry(3, 3), new T.MeshBasicMaterial({ map: blobTex, color: 0x000000, transparent: true, depthWrite: false, opacity: .5 }));
+  blob.rotation.x = -Math.PI / 2; blob.position.y = .004;
+  scene.add(blob);
+
+  const hemi = new T.HemisphereLight(0xf6f8ff, 0xa9d3f5, .5);
+  const key = new T.DirectionalLight(0xfff8ee, 1.55);
+  key.position.set(-2.8, 9, 5); key.castShadow = true;
+  key.shadow.mapSize.set(1024, 1024);
+  Object.assign(key.shadow.camera, { left: -5.5, right: 5.5, top: 5.5, bottom: -5.5, near: 1, far: 24 });
+  key.shadow.camera.updateProjectionMatrix();
+  key.shadow.bias = -.0004; key.shadow.normalBias = .02;
+  const fill = new T.DirectionalLight(0xffd6c8, .35); fill.position.set(5, 3, -2);
+  scene.add(hemi, key, fill);
+
+  // Studio environment for the clear-coat reflections: a dome in the skin's colors plus two soft panels.
+  let envKey = '';
+  function environment(topHex, bottomHex) {
+    if (topHex + bottomHex === envKey) return;
+    envKey = topHex + bottomHex;
+    const s = new T.Scene();
+    const geo = new T.SphereGeometry(20, 32, 16), p = geo.attributes.position, cols = [];
+    const top = new T.Color(topHex), bottom = new T.Color(bottomHex), c = new T.Color();
+    for (let i = 0; i < p.count; i++) { c.copy(bottom).lerp(top, (p.getY(i) / 20 + 1) / 2); cols.push(c.r, c.g, c.b); }
+    geo.setAttribute('color', new T.Float32BufferAttribute(cols, 3));
+    s.add(new T.Mesh(geo, new T.MeshBasicMaterial({ side: T.BackSide, vertexColors: true })));
+    const panel = (w, hh, x, y, z, k) => {
+      const m = new T.Mesh(new T.PlaneGeometry(w, hh), new T.MeshBasicMaterial({ color: new T.Color(1, .96, .92).multiplyScalar(k), side: T.DoubleSide }));
+      m.position.set(x, y, z); m.lookAt(0, 0, 0); s.add(m);
+    };
+    panel(10, 6, -6, 12, 7, 3.2); panel(6, 4, 10, 4, -3, 1.4);
+    const pm = new T.PMREMGenerator(renderer);
+    if (scene.environment) scene.environment.dispose();
+    scene.environment = pm.fromScene(s, .035).texture;
+    pm.dispose();
+    s.traverse(o => { if (o.geometry) o.geometry.dispose(); if (o.material) o.material.dispose(); });
+  }
+
+  // Everything colored in the scene comes from the active skin's CSS tokens.
+  function applyTheme() {
+    const feltC = tok('--felt') || '#A9D3F5';
+    feltMat.color.set(feltC); rimMat.color.set(tok('--rim') || '#7FB3E6'); hemi.groundColor.set(feltC);
+    ground.material.opacity = parseFloat(tok('--shadow-a')) || .2;
+    environment(tok('--env-top') || '#F4F7FF', tok('--env-bottom') || '#12234A');
+    paintDie(); kick();
+  }
+
+  // ---- motion ----
+  const qA = new T.Quaternion(), qB = new T.Quaternion(), qT = new T.Quaternion(), qInv = new T.Quaternion();
+  const vD = new T.Vector3(), vP = new T.Vector3();
+  const rest = { q: new T.Quaternion(), x: 0, z: 0 };
+  const press = { v: 0, t: 0, eps: .002 };
+  let wig = -1, anim = null;
+
+  // Height of the die center above the felt so its lowest point just touches it.
+  function extentDown(q) {
+    qInv.copy(q).invert(); vD.set(0, -1, 0).applyQuaternion(qInv);
+    return INNER * (Math.abs(vD.x) + Math.abs(vD.y) + Math.abs(vD.z)) + ROUND;
+  }
+  function faceQuat(n, yaw) {
+    const q = new T.Quaternion().setFromUnitVectors(new T.Vector3(...NORMALS[n]), UP);
+    return new T.Quaternion().setFromAxisAngle(UP, yaw).multiply(q);
+  }
+  const sideYaw = () => (Math.random() < .5 ? -1 : 1) * rand(.35, .75);
+
+  // Timeline (s): one toss, two smaller bounces, a short rock. Rotation runs at a constant rate
+  // inside each arc and drops at each impact, which is what makes it read as a physical bounce.
+  const R = { T1: .6, T2: .3, T3: .17, TW: .46, H1: 3.3, H2: .8, H3: .2, LIFT: .42 };
+
+  function stepRest(now, dt) {
+    let active = stepSpring(press, dt, 16);
+    die.quaternion.copy(rest.q);
+    if (press.v > .0005) { qT.setFromAxisAngle(XAX, .1 * press.v); die.quaternion.premultiply(qT); }
+    if (wig >= 0) {
+      const tau = (now - wig) / 1000;
+      if (tau < .55) { qT.setFromAxisAngle(UP, .17 * Math.exp(-5.5 * tau) * Math.sin(tau * Math.PI * 2 * 4.2)); die.quaternion.premultiply(qT); active = true; }
+      else wig = -1;
+    }
+    die.position.set(rest.x, extentDown(die.quaternion) + press.v * R.LIFT, rest.z);
+    return active;
+  }
+  function stepRoll(now) {
+    // rAF timestamps mark the frame start, which can precede the tap; clamp so the toss never starts below the felt.
+    const a = anim, t = Math.max(0, (now - a.start) / 1000);
+    let p, ph, g = 0, wob = 0, fin = false;
+    if (a.red) { const u = Math.min(1, t / .32); p = ph = 1 - Math.pow(1 - u, 3); fin = u >= 1; }
+    else if (t < R.T1) { const u = t / R.T1; p = .78 * u; ph = .7 * u; g = a.lift * (1 - u) + 4 * R.H1 * u * (1 - u); }
+    else if (t < R.T1 + R.T2) { const u = (t - R.T1) / R.T2; p = .78 + .17 * u; ph = .7 + .22 * u; g = 4 * R.H2 * u * (1 - u); }
+    else if (t < R.T1 + R.T2 + R.T3) { const u = (t - R.T1 - R.T2) / R.T3; p = .95 + .05 * u; ph = .92 + .08 * u; g = 4 * R.H3 * u * (1 - u); }
+    else { const tau = t - (R.T1 + R.T2 + R.T3); p = ph = 1; wob = .11 * Math.exp(-6.5 * tau) * Math.sin(tau * Math.PI * 2 * 3.3); fin = tau >= R.TW; }
+    // Whole turns about the tumble axis unwind to zero, so the die starts exactly where it was and ends exactly on the result.
+    qA.slerpQuaternions(a.q0, a.qf, p);
+    qB.setFromAxisAngle(a.axis, a.turns * Math.PI * 2 * (1 - p));
+    die.quaternion.copy(qB).multiply(qA);
+    if (wob) { qT.setFromAxisAngle(a.wob, wob); die.quaternion.premultiply(qT); }
+    die.position.set(lerp(a.from.x, a.to.x, ph), g + extentDown(die.quaternion), lerp(a.from.z, a.to.z, ph));
+    if (fin) {
+      rest.q.copy(a.qf); rest.x = a.to.x; rest.z = a.to.z;
+      die.quaternion.copy(a.qf); die.position.set(rest.x, HALF, rest.z);
+      anim = null; a.cb(a.n);
+    }
+    return true;
+  }
+
+  let W = 0, H = 0;
+  const api = {
+    kind: 'gl',
+    init(n) {
+      rest.q.copy(faceQuat(n, sideYaw()));
+      applyTheme();
+      stepRest(performance.now(), 0);
+      api.render();
+      canvas.classList.add('ready');
+      canvas.addEventListener('webglcontextlost', e => { e.preventDefault(); api.lost = true; switchToFallback(); }, { once: true });
+    },
+    rolling: () => !!anim,
+    roll(n, cb) {
+      const red = reduced();
+      const from = { x: die.position.x, z: die.position.z };
+      const ang = rand(0, Math.PI * 2), rad = .55 * Math.sqrt(Math.random());
+      const to = { x: Math.cos(ang) * rad, z: Math.sin(ang) * rad };
+      const axis = new T.Vector3(rand(-1, 1), rand(-.3, .3), rand(-1, 1));
+      if (axis.lengthSq() < .01) axis.set(1, 0, 0);
+      axis.normalize();
+      anim = {
+        start: performance.now(), n, cb, red, from, to, axis,
+        q0: die.quaternion.clone(), qf: faceQuat(n, sideYaw()),
+        wob: new T.Vector3(rand(-1, 1), 0, rand(-1, 1)).normalize(),
+        lift: Math.max(0, die.position.y - extentDown(die.quaternion)),
+        turns: red ? 0 : (Math.random() < .3 ? 1 : 2),
+      };
+      press.v = press.t = 0; wig = -1;
+      // Follow the landing spot halfway: the die drifts naturally but the tray stays framed.
+      frame.tx.t = to.x * .5; frame.tz.t = to.z * .5;
+      kick();
+      return red ? [[.3, .5]] : [[R.T1, 1], [R.T1 + R.T2, .55], [R.T1 + R.T2 + R.T3, .28]];
+    },
+    press(on) { if (anim) return; press.t = on ? 1 : 0; kick(); },
+    wiggle() { if (anim) return; wig = performance.now(); kick(); },
+    step(now, dt) {
+      const active = anim ? stepRoll(now) : stepRest(now, dt);
+      const lift = Math.max(0, die.position.y - HALF);
+      blob.position.x = die.position.x; blob.position.z = die.position.z;
+      blob.material.opacity = .5 * Math.max(.12, 1 - lift / 2.6);
+      blob.scale.setScalar(1 + lift * .12);
+      return active;
+    },
+    render() {
+      const w = canvas.clientWidth || innerWidth, hh = canvas.clientHeight || innerHeight;
+      if (w !== W || hh !== H) { W = w; H = hh; renderer.setSize(W, H, false); }
+      cam.aspect = W / H;
+      cam.position.set(frame.tx.v, HALF + DIST * SIN_EL, frame.tz.v + DIST * COS_EL);
+      cam.lookAt(frame.tx.v, HALF, frame.tz.v);
+      // Zoom so the die is frame.px pixels tall; shift the lens so it sits at frame.fy of the screen height.
+      cam.zoom = frame.px.v * DIST * TAN_HALF / H;
+      cam.setViewOffset(W, H, 0, (.5 - frame.fy.v) * H, W, H);
+      cam.updateProjectionMatrix();
+      renderer.render(scene, cam);
+    },
+    screenPos() {
+      vP.copy(die.position).project(cam);
+      return { x: (vP.x + 1) / 2 * (W || innerWidth), y: (1 - vP.y) / 2 * (H || innerHeight), size: Math.max(104, frame.px.v * 1.75) };
+    },
+    applyTheme,
+  };
+  return api;
+}
+
+/* ================= fallback die (no WebGL) ================= */
+const Fallback = {
+  kind: 'css', el: null, tray: null, busy: false,
+  init(n) {
+    this.tray = document.createElement('div'); this.tray.className = 'fb-tray';
+    document.body.insertBefore(this.tray, dieBtn);
+    dieBtn.innerHTML = '<span class="fb-die"></span>';
+    this.el = dieBtn.firstChild; this.face(n); kick();
+  },
+  face(n) { this.el.innerHTML = faceSVG(n); },
+  rolling() { return this.busy; },
+  roll(n, cb) {
+    const red = reduced(), el = this.el;
+    this.busy = true;
+    el.classList.remove('fb-roll', 'fb-wig'); void el.offsetWidth;
+    if (!red) el.classList.add('fb-roll');
+    const iv = setInterval(() => this.face(randomFace()), 90);
+    setTimeout(() => { clearInterval(iv); this.face(n); }, red ? 120 : 700);
+    setTimeout(() => { el.classList.remove('fb-roll'); this.busy = false; cb(n); }, red ? 300 : 1000);
+    return red ? [[.12, .5]] : [[.62, 1], [.8, .5], [.9, .25]];
+  },
+  press(on) { this.el && this.el.classList.toggle('pressed', on); },
+  wiggle() { const el = this.el; el.classList.remove('fb-wig'); void el.offsetWidth; el.classList.add('fb-wig'); },
+  step() { return false; },
+  render() {
+    const px = frame.px.v, x = innerWidth / 2, y = frame.fy.v * innerHeight, w = px * 2.8, hh = px * 2.35;
+    this.tray.style.width = w + 'px'; this.tray.style.height = hh + 'px';
+    this.tray.style.transform = `translate(${x - w / 2}px, ${y - hh / 2 + px * .12}px)`;
+  },
+  screenPos() { return { x: innerWidth / 2, y: frame.fy.v * innerHeight, size: frame.px.v * 1.05 }; },
+  applyTheme() {},
+};
+
+function restFace() { const c = current() || state.rolls[state.rolls.length - 1]; return c ? c.n : 5; }
+function switchToFallback() {
+  $('#scene').classList.remove('ready');
+  Stage = Fallback; Fallback.init(restFace());
+  if (mode === 'rolling') landed(current() ? current().n : restFace());
+  updateFrame(true);
+}
+function loadStage() {
+  let settled = false;
+  const fail = () => { if (settled) return; settled = true; switchToFallback(); };
+  const timeout = setTimeout(fail, 8000);
+  const s = document.createElement('script');
+  s.src = THREE_URL; s.async = true;
+  s.onload = () => {
+    if (settled) return;
+    settled = true; clearTimeout(timeout);
+    let g = null;
+    try { g = makeGL(); if (g) { Stage = g; Stage.init(restFace()); } }
+    catch (e) { g = null; Stage = null; }
+    if (!g) { switchToFallback(); return; }
+    updateFrame(true);
+  };
+  s.onerror = () => { clearTimeout(timeout); fail(); };
+  document.head.appendChild(s);
+}
+
+/* ================= modes and the card sheet ================= */
+const sheet = $('#sheet'), topbar = $('.topbar');
+const views = { idle: $('#vIdle'), task: $('#vTask'), timer: $('#vTimer'), done: $('#vDone') };
+let mode = 'idle', idleH = 230;
+
+function setMode(m, opt = {}) {
+  mode = m; document.body.dataset.mode = m;
+  if (m === 'rolling') {
+    sheet.classList.remove('open'); sheet.inert = true;
+  } else {
+    for (const k in views) views[k].hidden = k !== m;
+    ({ idle: renderIdle, task: renderTask, timer: renderTimer, done: renderDone })[m]();
+    sheet.inert = false; sheet.scrollTop = 0;
+    if (opt.instant) { sheet.classList.add('instant'); requestAnimationFrame(() => requestAnimationFrame(() => sheet.classList.remove('instant'))); }
+    sheet.classList.add('open');
+  }
+  dieBtn.setAttribute('aria-label', m === 'rolling' ? 'Rolling' : (m === 'task' || m === 'timer') ? 'Roll again (tap twice)' : 'Roll the die');
+  dieBtn.setAttribute('aria-disabled', m === 'rolling' ? 'true' : 'false');
+  updateFrame(opt.instant);
+}
+
+// Frame the die in the open space between the top bar and the card.
+function updateFrame(instant) {
+  const W = innerWidth, H = innerHeight;
+  let reserve;
+  if (mode === 'rolling') reserve = idleH;
+  else { reserve = sheet.offsetHeight; if (mode === 'idle') idleH = reserve; }
+  const top = topbar.getBoundingClientRect().bottom + 6;
+  const avail = Math.max(60, H - reserve - 10 - top);
+  // Seen from 57° up, tray plus die span about 2.7 die-heights (measured), centered 0.27 die-heights below the die's center.
+  const px = clamp(Math.min(W * .32, avail * .35, 220), 44, 220);
+  frame.px.t = px;
+  frame.fy.t = clamp((top + avail / 2 - px * .27) / H, .1, .6);
+  if (instant) for (const k in frame) frame[k].v = frame[k].t;
+  kick();
+}
+
+function renderIdle() {
+  $('#todayLine').textContent = todayLine();
+}
+function renderTask() {
+  const r = current();
+  if (!r) { setMode('idle'); return; }
+  const m = moveOf(r);
+  $('#tFace').innerHTML = faceSVG(r.n);
+  $('#tEyebrow').textContent = faceOf(r.n).name;  // the face glyph beside it shows the number
+  $('#tChip').textContent = m.time;
+  $('#tTitle').textContent = m.title;
+  $('#tDo').textContent = m.doThis;
+  $('#tWhy').textContent = m.why;
+  updateTimerBtn();
+}
+function renderTimer() {
+  const r = current();
+  if (!r) { setMode('idle'); return; }
+  const m = moveOf(r);
+  ensureTimer();
+  $('#tmTitle').textContent = m.title;
+  $('#tmSuggest').textContent = `Suggested ${m.time}`;
+  updateTimerUI();
+}
+function renderDone() {
+  const r = current();
+  if (!r) { setMode('idle'); return; }
+  $('#dFace').innerHTML = faceSVG(r.n);
+  $('#dEyebrow').textContent = moveOf(r).title;
+  $('#dSub').textContent = `${doneLineOf(r)} Logged at ${fmtTime(r.done)}.`;
+  $('#dStats').textContent = todayLine();
+  const b = $('#dBadge'); b.classList.remove('play'); void b.offsetWidth; b.classList.add('play');
+}
+
+/* ================= rolling ================= */
+let armedUntil = 0;
+function roll() {
+  if (!Stage || mode === 'rolling') return;
+  const n = randomFace();
+  clearTimer();
+  const r = { id: uid(), n, k: drawMove(n), at: Date.now(), done: null };
+  state.rolls.push(r); state.currentId = r.id; save();
+  dieBtn.classList.remove('hint');
+  setMode('rolling');
+  const impacts = Stage.roll(n, landed);
+  Sound.roll(impacts); Haptic.roll(impacts);
+}
+function landed(n) {
+  if (!current()) { setMode('idle'); return; }
+  Sound.land();
+  setMode('task');
+  const m = moveOf(current());
+  announce(`Rolled a ${n}, ${faceOf(n).name}. ${m.title}, ${m.time}.`);
+}
+
+dieBtn.addEventListener('pointerdown', () => { if (mode !== 'rolling' && Stage) { Sound.unlock(); Stage.press(true); } });
+['pointerup', 'pointercancel', 'pointerleave'].forEach(ev => dieBtn.addEventListener(ev, () => Stage && Stage.press(false)));
+dieBtn.addEventListener('contextmenu', e => e.preventDefault());
+dieBtn.addEventListener('click', () => {
+  Sound.unlock();
+  if (!Stage || mode === 'rolling') return;
+  // A task is on the table: the first tap only warns, so a stray touch doesn't throw it away.
+  if ((mode === 'task' || mode === 'timer') && Date.now() > armedUntil) {
+    armedUntil = Date.now() + 3200;
+    Stage.wiggle(); Haptic.tap();
+    toast('Tap the die again to reroll.');
+    return;
+  }
+  armedUntil = 0;
+  roll();
+});
+
+/* ================= completion ================= */
+function complete(src) {
+  const r = current();
+  if (!r || r.done) return;
+  const rect = (src || $('#doneBtn')).getBoundingClientRect();
+  r.done = Date.now(); clearTimer(); save();
+  setMode('done');
+  Sound.unlock(); Sound.done(); Haptic.success();
+  FX.burst(rect.left + rect.width / 2, rect.top + rect.height / 2);
+  announce(`Nice work. ${moveOf(r).title} logged as done at ${fmtTime(r.done)}.`);
+}
+function undo() {
+  const r = current();
+  if (!r || !r.done) return;
+  r.done = null; save();
+  setMode('task');
+  toast('Marked as not done.');
+}
+$('#doneBtn').addEventListener('click', e => complete(e.currentTarget));
+$('#tmDone').addEventListener('click', e => complete(e.currentTarget));
+$('#earlyDone').addEventListener('click', e => complete(e.currentTarget));
+$('#undoBtn').addEventListener('click', undo);
+$('#againBtn').addEventListener('click', () => { Sound.unlock(); roll(); });
+
+/* ================= timer ================= */
+const C = 2 * Math.PI * 96;
+let tickIv = 0, wakeLock = null;
+const timerOf = () => { const t = state.timer; return t && t.id === state.currentId ? t : null; };
+function ensureTimer() {
+  let t = timerOf();
+  if (!t) {
+    const m = moveOf(current()).min;
+    t = state.timer = { id: state.currentId, dur: m * 60000, rem: m * 60000, end: null, st: 'ready' };
+    save();
+  }
+  return t;
+}
+const remaining = t => t.st === 'run' ? Math.max(0, t.end - Date.now()) : t.rem;
+const mmss = ms => { const s = Math.ceil(ms / 1000); return `${String(Math.floor(s / 60)).padStart(2, '0')}:${String(s % 60).padStart(2, '0')}`; };
+
+async function wakeOn() {
+  try { if ('wakeLock' in navigator && !wakeLock) { wakeLock = await navigator.wakeLock.request('screen'); wakeLock.addEventListener('release', () => { wakeLock = null; }); } }
+  catch (e) { wakeLock = null; }
+}
+function wakeOff() { try { if (wakeLock) wakeLock.release(); } catch (e) {} wakeLock = null; }
+function startTick() { if (!tickIv) tickIv = setInterval(onTick, 250); }
+function stopTick() { clearInterval(tickIv); tickIv = 0; }
+function onTick() {
+  const t = timerOf();
+  if (!t || t.st !== 'run') { stopTick(); return; }
+  if (t.end - Date.now() <= 0) { timerFinish(); return; }
+  updateTimerUI(); updateTimerBtn();
+}
+function timerStart() {
+  const t = timerOf(); if (!t) return;
+  Sound.unlock();
+  t.end = Date.now() + (t.rem > 0 ? t.rem : t.dur); t.st = 'run'; save();
+  startTick(); wakeOn(); Sound.blip(); Haptic.tap();
+  updateTimerUI(); announce(`Timer started, ${Math.round(t.dur / 60000)} minutes.`);
+}
+function timerPause() {
+  const t = timerOf(); if (!t || t.st !== 'run') return;
+  t.rem = remaining(t); t.end = null; t.st = 'pause'; save();
+  stopTick(); wakeOff(); Haptic.tap(); updateTimerUI();
+}
+function timerReset() {
+  const t = timerOf(); if (!t) return;
+  t.rem = t.dur; t.end = null; t.st = 'ready'; save();
+  stopTick(); wakeOff(); updateTimerUI();
+}
+function timerFinish() {
+  const t = timerOf(); if (!t) return;
+  t.rem = 0; t.end = null; t.st = 'fin'; save();
+  stopTick(); wakeOff();
+  Sound.unlock(); Sound.timesUp(); Haptic.alarm();
+  announce('Time is up.');
+  if (mode === 'task') setMode('timer'); else { updateTimerUI(); updateTimerBtn(); }
+}
+function clearTimer() { stopTick(); wakeOff(); state.timer = null; }
+function setMinutes(m) {
+  const t = timerOf(); if (!t || t.st !== 'ready') return;
+  m = clamp(Math.round(m), 1, 60);
+  t.dur = t.rem = m * 60000; save(); updateTimerUI();
+}
+function updateTimerUI() {
+  const t = timerOf(); if (!t) return;
+  const rem = remaining(t), mins = Math.round(t.dur / 60000);
+  $('#clock').textContent = mmss(rem);
+  $('#ringFill').style.strokeDashoffset = (C * (1 - (t.dur ? rem / t.dur : 0))).toFixed(1);
+  $('#vTimer').dataset.st = t.st;
+  $('#clockState').textContent = { ready: 'Ready', run: 'Running', pause: 'Paused', fin: 'Time’s up' }[t.st];
+  $('#stepVal').textContent = `${mins} min`;
+  $('#stepper').hidden = $('#tmSuggest').hidden = t.st !== 'ready';
+  $('#minus').disabled = mins <= 1; $('#plus').disabled = mins >= 60;
+  $('#tmStart').hidden = t.st !== 'ready';
+  $('#tmPause').hidden = t.st !== 'run';
+  $('#tmResume').hidden = t.st !== 'pause';
+  $('#tmDone').hidden = t.st !== 'fin';
+  $('#tmReset').hidden = t.st === 'ready';
+  $('#early').hidden = !(t.st === 'run' || t.st === 'pause');
+  $('#timerActions').classList.toggle('one', t.st === 'ready');
+}
+function updateTimerBtn() {
+  const t = timerOf(), el = $('#timerBtnLabel');
+  if (!t || t.st === 'ready') el.textContent = 'Start timer';
+  else if (t.st === 'run') el.textContent = `Timer ${mmss(remaining(t))}`;
+  else if (t.st === 'pause') el.textContent = `Paused ${mmss(t.rem)}`;
+  else el.textContent = 'Time’s up';
+}
+// Press and hold the stepper to keep changing the minutes.
+function holdRepeat(btn, delta) {
+  let t1 = 0, t2 = 0;
+  const go = () => { const t = timerOf(); if (t) setMinutes(Math.round(t.dur / 60000) + delta); };
+  const stop = () => { clearTimeout(t1); clearInterval(t2); };
+  btn.addEventListener('pointerdown', () => { go(); Haptic.tap(); stop(); t1 = setTimeout(() => { t2 = setInterval(go, 110); }, 420); });
+  ['pointerup', 'pointerleave', 'pointercancel'].forEach(ev => btn.addEventListener(ev, stop));
+  btn.addEventListener('click', e => { if (e.detail === 0) go(); });  // keyboard activation
+}
+holdRepeat($('#minus'), -1);
+holdRepeat($('#plus'), 1);
+$('#timerBtn').addEventListener('click', () => { Sound.unlock(); setMode('timer'); });
+$('#timerBack').addEventListener('click', () => setMode('task'));
+$('#tmStart').addEventListener('click', timerStart);
+$('#tmResume').addEventListener('click', timerStart);
+$('#tmPause').addEventListener('click', timerPause);
+$('#tmReset').addEventListener('click', timerReset);
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState !== 'visible') return;
+  const t = timerOf();
+  if (t && t.st === 'run') { wakeOn(); onTick(); }
+});
+
+/* ================= history ================= */
+const hist = $('#hist'), scrim = $('#scrim');
+let lastFocus = null, clearArmed = 0;
+function openHistory() {
+  renderHistory();
+  lastFocus = document.activeElement;
+  hist.hidden = false;
+  requestAnimationFrame(() => { hist.classList.add('open'); scrim.classList.add('show'); });
+  sheet.inert = true; dieBtn.inert = true;
+  $('#histClose').focus({ preventScroll: true });
+}
+function closeHistory() {
+  hist.classList.remove('open'); scrim.classList.remove('show');
+  setTimeout(() => { if (!hist.classList.contains('open')) hist.hidden = true; }, 340);
+  sheet.inert = mode === 'rolling'; dieBtn.inert = false;
+  if (lastFocus && lastFocus.focus) lastFocus.focus({ preventScroll: true });
+}
+function statusOf(r) {
+  if (r.done) return h('span', { class: 'status done' }, `Done ${fmtTime(r.done)}`);
+  if (r.id === state.currentId && Date.now() - r.at < 12 * 3600e3) return h('span', { class: 'status now' }, 'In progress');
+  return h('span', { class: 'status open' }, 'Not done');
+}
+function dayLabel(ms) {
+  const k = dayKey(ms), now = new Date();
+  if (k === dayKey(now.getTime())) return 'Today';
+  now.setDate(now.getDate() - 1);
+  if (k === dayKey(now.getTime())) return 'Yesterday';
+  return fmtDay(ms);
+}
+function renderHistory() {
+  const body = $('#histBody');
+  body.replaceChildren();
+  const note = h('p', { class: 'note' }, storageOK ? 'Saved in this browser on this device only.' : 'This browser is blocking storage. History resets when the page closes.');
+  if (!state.rolls.length) {
+    body.append(h('div', { class: 'empty' },
+      h('p', { class: 'empty-title' }, 'No rolls yet'),
+      h('p', null, 'Every roll and every finished task lands here with its time. Roll the die to start.')),
+      h('div', { class: 'hist-foot' }, note));
+    return;
+  }
+  const s = stats();
+  const stat = (label, value, sub) => h('div', { class: 'stat' }, h('span', { class: 'label' }, label), h('b', null, value), h('small', null, sub));
+  body.append(h('div', { class: 'stats' },
+    stat('Today', s.doneToday, `done of ${s.rolledToday} rolled`),
+    stat('Streak', s.streak, s.streak === 1 ? 'day in a row' : 'days in a row'),
+    stat('All time', s.doneAll, s.doneAll === 1 ? 'task done' : 'tasks done')));
+
+  const counts = FACES.map(f => ({ f, rolled: 0, done: 0 }));
+  for (const r of state.rolls) { counts[r.n - 1].rolled++; if (r.done) counts[r.n - 1].done++; }
+  const max = Math.max(1, ...counts.map(c => c.rolled));
+  body.append(h('section', { class: 'bytask', 'aria-label': 'By face' },
+    h('h3', { class: 'label' }, 'By face · done / rolled'),
+    counts.map(c => h('div', { class: 'bt-row' },
+      h('span', { html: faceSVG(c.f.n) }),
+      h('span', { class: 'bt-name' }, c.f.name),
+      h('span', { class: 'bt-num' }, `${c.done}/${c.rolled}`),
+      h('span', { class: 'bt-bar', 'aria-hidden': 'true' },
+        h('i', { class: 'bt-rolled', style: `width:${(c.rolled / max * 100).toFixed(1)}%` }),
+        h('i', { class: 'bt-done', style: `width:${(c.done / max * 100).toFixed(1)}%` }))))));
+
+  const groups = new Map();
+  for (let i = state.rolls.length - 1; i >= 0; i--) {
+    const r = state.rolls[i], k = dayKey(r.at);
+    if (!groups.has(k)) groups.set(k, []);
+    groups.get(k).push(r);
+  }
+  for (const list of groups.values()) {
+    body.append(h('section', { class: 'day' },
+      h('h3', { class: 'label' }, dayLabel(list[0].at)),
+      list.map(r => h('div', { class: 'row' },
+        h('time', { datetime: new Date(r.at).toISOString() }, fmtTime(r.at)),
+        h('span', { html: faceSVG(r.n) }),
+        h('span', { class: 'row-title' }, moveOf(r).title),
+        statusOf(r)))));
+  }
+
+  const clearBtn = h('button', { class: 'btn btn-ghost', type: 'button', id: 'clearBtn' }, 'Clear history');
+  clearBtn.addEventListener('click', () => {
+    if (Date.now() < clearArmed) { clearAll(); return; }
+    clearArmed = Date.now() + 4000;
+    const n = state.rolls.length;
+    clearBtn.textContent = `Tap again to delete ${n} roll${n === 1 ? '' : 's'}`;
+    clearBtn.classList.add('armed');
+    setTimeout(() => { if (clearBtn.isConnected) { clearBtn.textContent = 'Clear history'; clearBtn.classList.remove('armed'); } }, 4000);
+  });
+  body.append(h('div', { class: 'hist-foot' }, clearBtn, note));
+}
+function clearAll() {
+  clearArmed = 0;
+  state.rolls = []; state.currentId = null; clearTimer(); save();
+  renderHistory();
+  if (mode !== 'rolling') setMode('idle');
+  toast('History cleared.');
+}
+$('#histBtn').addEventListener('click', openHistory);
+$('#histClose').addEventListener('click', closeHistory);
+scrim.addEventListener('click', closeHistory);
+document.addEventListener('keydown', e => { if (e.key === 'Escape' && !hist.hidden) closeHistory(); });
+
+/* ================= sound toggle ================= */
+function paintSound() {
+  $('#soundBtn').setAttribute('aria-pressed', String(state.sound));
+  $('#soundBtn').setAttribute('aria-label', state.sound ? 'Sound on' : 'Sound off');
+  $('#soundOn').toggleAttribute('hidden', !state.sound);
+  $('#soundOff').toggleAttribute('hidden', state.sound);
+}
+$('#soundBtn').addEventListener('click', () => {
+  state.sound = !state.sound; save(); paintSound();
+  if (state.sound) { Sound.unlock(); Sound.blip(); }
+  toast(state.sound ? 'Sound on' : 'Sound off', 1400);
+});
+
+/* ================= theme + resize ================= */
+const onTheme = () => { if (Stage) Stage.applyTheme(); };
+new MutationObserver(onTheme).observe(root, { attributes: true, attributeFilter: ['data-skin'] });
+addEventListener('resize', () => updateFrame());
+new ResizeObserver(() => { if (mode !== 'rolling') updateFrame(); }).observe(sheet);
+if (document.fonts && document.fonts.ready) document.fonts.ready.then(() => updateFrame());
+
+/* ================= boot ================= */
+$('#legend').innerHTML = FACES.map(f =>
+  `<li>${faceSVG(f.n)}<span class="lg-text"><span class="lg-name">${f.name}</span><span class="lg-time">${f.time}</span></span></li>`).join('');
+load();
+applySkin(state.skin);
+paintSound();
+(function restore() {
+  const cur = current();
+  if (cur && !cur.done && Date.now() - cur.at < 12 * 3600e3) {
+    const t = timerOf();
+    if (t && t.st === 'run' && t.end <= Date.now()) { t.st = 'fin'; t.rem = 0; t.end = null; save(); }
+    if (state.rolls.length) dieBtn.classList.remove('hint');
+    setMode(t && t.st !== 'ready' ? 'timer' : 'task', { instant: true });
+    if (t && t.st === 'run') { startTick(); wakeOn(); }
+  } else {
+    if (state.rolls.length) dieBtn.classList.remove('hint');
+    setMode('idle', { instant: true });
+  }
+})();
+loadStage();
+})();
+</script>
+</body>
+</html>
